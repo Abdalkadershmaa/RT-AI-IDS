@@ -1,49 +1,229 @@
-# Real-time Intrusion Detection Web App
-<b>Project III</b><br>
-<b>Nguyễn Việt Hoàng - 20194434</b><br>
-## About
-* Real-time Intrusion Detection System implementing Machine Learning. 
+# Production-Grade Asynchronous IDS
 
-* We combine Supervised learning (RF) for detecting known attacks from CICIDS 2018 & SCVIC-APT datasets, and Unsupervised Learning (AE) for anomaly detection.
+This project is a modular, microservice-oriented Intrusion Detection System (IDS) that
+supports real-time packet ingestion, flow feature extraction, ML-based inference, and alert
+persistence/query through a JWT-protected REST API.
 
-* System descriptive diagram:
-![image](https://github.com/HoangNV2001/Real-time-IDS/assets/72451372/78e0b74c-9db6-4bf5-8591-6d7aa8247b22)
+## Project Overview
 
-## Requirements:
-1. Windows OS.
+```mermaid
+flowchart LR
+  packetSources[PacketSources] --> ingestSvc[IngestionService]
+  ingestSvc --> redisBroker[RedisBroker]
+  redisBroker --> flowSvc[FlowBuilderWorker]
+  flowSvc --> redisBroker
+  redisBroker --> inferSvc[InferenceWorker]
+  inferSvc --> postgresDb[PostgresAttackLogDB]
+  apiSvc[FlaskApiService] --> postgresDb
+  apiSvc --> clients[FrontendOrSIEM]
+```
 
-2. Python 3.9:
-    * link 64-bit: https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe 
-    * link 32-bit: https://www.python.org/ftp/python/3.9.13/python-3.9.13.exe
+### Service Responsibilities
 
-     <b> Note: select "Add Python 3.9 to PATH" in installation procedure.</b>
+- `services/ingestion`
+  - Captures packets from live interfaces, PCAP replay, or tcpdump JSON streams.
+  - Publishes normalized packet events to Redis.
+- `services/flow_builder`
+  - Aggregates packets into flows and computes feature vectors.
+  - Applies stale-flow cleanup and bounded in-memory flow tracking.
+  - Pushes finalized flow feature events to inference queue.
+- `services/inference`
+  - Loads ML artifacts once and keeps them resident in memory per worker.
+  - Produces classifications, risk scores, and defensive wireless findings.
+  - Persists alerts to the database.
+- `services/api`
+  - Exposes health, auth, prediction, alerts, and stats endpoints.
+  - Requires JWT for protected endpoints.
+- `shared`
+  - Centralized settings and schema contracts shared across services.
 
-3. Npcap 1.71:
-    https://npcap.com/dist/npcap-1.71.exe
+## Defensive Detection Methodology
 
-## Download project folder & environment setups:
-<code>git clone https://github.com/HoangNV2001/APT_Detection
-    cd APT_Detection
-    # Create a virtual environment
-    python3.9 -m venv venv
-    # Activate that virtual environment
-    source venv/bin/activate
-    # Install the project requirements.
-    python -m pip install -r requirements.txt
-    # or: pip install -r requirements.txt</code>
+- Wireshark/tshark-compatible and `tcpdump`-driven packet workflows.
+- Defensive wireless analytics:
+  - suspicious 802.11 management-frame burst detection
+  - deauthentication flood indicators
+  - WEP/WPS risk posture indicators
+- TLS metadata-first strategy for encrypted traffic. Full payload decryption must only be used
+  in explicitly authorized and compliant environments.
 
-Run program:
+## Prerequisites
 
-<code>python application.py</code>
+- Python 3.11+
+- Docker and Docker Compose (for containerized deployment)
+- Redis and PostgreSQL (if running without Docker)
+- Packet capture permissions (Npcap/WinPcap equivalent on Windows)
 
-Web app address: [http://localhost:5000](http://localhost:5000)
+## Local Setup (Without Docker)
 
-## Demo GUI
-* Main page, overview of real-time captured flows:
+1. Create a virtual environment:
+   - `python -m venv .venv`
+2. Activate the environment:
+   - PowerShell: `.venv\\Scripts\\Activate.ps1`
+3. Install dependencies:
+   - `pip install -r requirements.txt`
+4. Configure environment variables (example):
+   - `SECRET_KEY=replace-me`
+   - `JWT_SECRET_KEY=replace-me`
+   - `ADMIN_USERNAME=admin`
+   - `ADMIN_PASSWORD=change-me`
+   - `LOG_LEVEL=INFO`
+   - `DATABASE_URL=postgresql+psycopg2://ids:ids@localhost:5432/ids`
+   - `REDIS_URL=redis://localhost:6379/0`
 
-![image](https://github.com/HoangNV2001/Real-time-IDS/assets/72451372/90b42a1a-e2cb-4445-8036-4504e9c7c4ba)
+## Run Services Locally
 
-* Flow detail page:
+Run each service in a separate terminal:
 
-![image](https://github.com/HoangNV2001/Real-time-IDS/assets/72451372/c6ce1c6b-a006-461e-8872-d889abd69d0d)
+1. API:
+   - `python application.py`
+2. Flow builder worker:
+   - `python -m services.flow_builder.worker`
+3. Inference worker:
+   - `python -m services.inference.worker`
+4. Ingestion service (live interface):
+   - `python -m services.ingestion.run_sniffer --interface <iface>`
+5. Ingestion service (PCAP replay):
+   - `python -m services.ingestion.run_sniffer --pcap-file sample.pcap`
+
+## Docker Deployment
+
+- Start all services:
+  - `docker compose up --build`
+- Start with packet capture container enabled:
+  - `docker compose --profile capture up --build`
+- Stop:
+  - `docker compose down`
+
+Default database provisioning in Compose:
+- host: `localhost`
+- port: `5432`
+- db: `ids`
+- user: `ids`
+- password: `ids`
+
+## API Documentation
+
+Base URL: `http://localhost:5000`
+
+### Health Endpoints
+
+- `GET /api/v1/health`
+- `GET /api/v1/ready`
+
+### Auth Endpoint
+
+- `POST /api/v1/auth/token`
+- Credentials are controlled via env vars `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+
+Request:
+```json
+{
+  "username": "admin",
+  "password": "admin"
+}
+```
+
+Response:
+```json
+{
+  "access_token": "<jwt>"
+}
+```
+
+### Predict Endpoint (JWT Required)
+
+- `POST /api/v1/predict`
+
+Headers:
+- `Authorization: Bearer <jwt>`
+
+Request:
+```json
+{
+  "flow_id": "optional-flow-id",
+  "features": [0.1, 0.2, 0.3, "... total 39 values ..."],
+  "context": {
+    "src_ip": "10.0.0.1",
+    "src_port": 5151,
+    "dst_ip": "10.0.0.2",
+    "dst_port": 443,
+    "protocol": "TCP",
+    "wireless": {
+      "link_type": "wifi",
+      "privacy_wep_enabled": true,
+      "wps_enabled": true,
+      "wps_failed_enrollment_attempts": 4
+    }
+  }
+}
+```
+
+Response:
+```json
+{
+  "id": 1,
+  "flow_id": "optional-flow-id",
+  "source_ip": "10.0.0.1",
+  "source_port": 5151,
+  "destination_ip": "10.0.0.2",
+  "destination_port": 443,
+  "protocol": "TCP",
+  "classification": "Suspicious",
+  "probability": 0.6,
+  "risk_label": "medium",
+  "risk_score": 0.6,
+  "rationale": [
+    "legacy_wep_exposure_indicator",
+    "wps_exposure_or_bruteforce_indicator",
+    "ml_model_flagged_flow"
+  ],
+  "created_at": "2026-01-01T00:00:00+00:00"
+}
+```
+
+### Alerts Endpoints (JWT Required)
+
+- `GET /api/v1/alerts?limit=50`
+- `GET /api/v1/alerts/<id>`
+
+### Stats Endpoint
+
+- `GET /api/v1/stats` (JWT required)
+
+## Testing
+
+- Run unit and integration tests:
+  - `python -m pytest -q`
+
+Covered test areas:
+- inference model lifecycle and rationale generation
+- wireless rule behavior
+- flow builder memory/termination behavior
+- API health/auth/predict/alerts workflow
+
+## Front-End Integration Guide (React Example)
+
+1. Authenticate once and store JWT in memory or secure storage.
+2. Call `POST /api/v1/predict` for manual/simulated analysis requests.
+3. Poll `GET /api/v1/alerts` for near-real-time dashboard updates.
+4. Visualize alert severity using `risk_label` and `risk_score`.
+
+Example fetch call:
+```javascript
+const token = "<jwt>";
+const res = await fetch("http://localhost:5000/api/v1/alerts?limit=25", {
+  headers: { Authorization: `Bearer ${token}` }
+});
+const alerts = await res.json();
+```
+
+## Production Notes
+
+- Replace bootstrap credentials with a real identity provider.
+- Rotate secrets and disable default values in production.
+- Add transport security, centralized logging, and metrics dashboards.
+- Consider schema migrations (Alembic) before multi-environment rollout.
+- For containerized packet capture, set `CAPTURE_INTERFACE` and run with
+  `--profile capture`.
 
