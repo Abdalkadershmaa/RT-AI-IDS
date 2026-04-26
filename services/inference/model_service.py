@@ -23,9 +23,9 @@ import numpy as np
 from shared.config import get_settings
 
 try:
-    import pickle
+    import pickle  # nosec B403 - loaded only from trusted models/ dir under our control
 
-    import dill
+    import dill  # nosec B403 - same; LIME explainer artefact
     import joblib
     from tensorflow import keras
 except ImportError:  # pragma: no cover - optional in trimmed images
@@ -108,7 +108,9 @@ class ModelService:
         if pickle and classifier_path.exists():
             try:
                 with classifier_path.open("rb") as handle:
-                    classifier = pickle.load(handle)
+                    # nosec B301 - artefact path is configured by the operator,
+                    # not user input; provenance documented in models/README.md.
+                    classifier = pickle.load(handle)  # nosec B301
             except Exception as exc:  # noqa: BLE001 — incompatible artefacts surface as many error types
                 load_error = exc
                 logger.warning(
@@ -147,7 +149,8 @@ class ModelService:
         if dill and explainer_path.exists():
             try:
                 with explainer_path.open("rb") as handle:
-                    explainer = dill.load(handle)
+                    # nosec B301 - same trust boundary as model.pkl above.
+                    explainer = dill.load(handle)  # nosec B301
             except Exception as exc:  # noqa: BLE001
                 logger.warning("model_service_explainer_load_failed error=%s", exc)
 

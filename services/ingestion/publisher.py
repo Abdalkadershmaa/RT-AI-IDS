@@ -42,5 +42,5 @@ class RedisPublisher:
     async def close(self) -> None:
         try:
             await self._client.close()
-        except Exception:  # pragma: no cover - defensive
-            pass
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("ingestion_publisher_close_failed error=%s", exc)

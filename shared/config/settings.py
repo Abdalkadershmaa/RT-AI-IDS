@@ -42,6 +42,7 @@ class Settings:
     log_level: str
     models_dir: str
     allow_fallback_classifier: bool
+    cors_allow_origins: tuple[str, ...]
 
 
 _cached: Settings | None = None
@@ -52,6 +53,12 @@ def _read_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _read_cors_origins(raw: str | None) -> tuple[str, ...]:
+    if not raw:
+        return ()
+    return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
 
 
 def _build() -> Settings:
@@ -71,6 +78,7 @@ def _build() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         models_dir=os.getenv("MODELS_DIR", "models"),
         allow_fallback_classifier=_read_bool("ALLOW_FALLBACK_CLASSIFIER", default=False),
+        cors_allow_origins=_read_cors_origins(os.getenv("CORS_ALLOW_ORIGINS")),
     )
     validate_runtime_secrets(
         environment=settings.environment,

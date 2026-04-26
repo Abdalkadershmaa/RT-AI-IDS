@@ -22,14 +22,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install \
-            Flask==3.0.3 Flask-JWT-Extended==4.6.0 Werkzeug==3.0.6 \
+            Flask==3.0.3 Flask-JWT-Extended==4.6.0 Flask-Cors==5.0.0 Werkzeug==3.0.6 \
             SQLAlchemy==2.0.36 redis==5.2.0 python-dotenv==1.0.1 pydantic==2.9.2 \
             scapy==2.5.0 psutil==6.1.0 numpy==1.26.4 scikit-learn==1.5.2 \
             alembic==1.13.3 pytest==8.3.3 pytest-timeout==2.3.1 fakeredis==2.26.1 \
-            ruff==0.6.9
+            ruff==0.6.9 bandit==1.9.4
 
       - name: Ruff lint
         run: ruff check .
+
+      - name: Bandit SAST
+        run: bandit -r services shared flow -ll
 
       - name: Pytest
         env:

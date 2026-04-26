@@ -1,5 +1,5 @@
 .PHONY: help bootstrap install lint format typecheck test test-unit test-integration \
-        compose-up compose-down compose-logs migrate clean
+        compose-up compose-down compose-logs migrate security clean
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -69,6 +69,9 @@ compose-logs:
 
 migrate:
 	$(PYTHON) -m alembic -c shared/db/migrations/alembic.ini upgrade head
+
+security:
+	$(PYTHON) -m bandit -r services shared flow -ll
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov dist build *.egg-info

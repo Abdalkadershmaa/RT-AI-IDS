@@ -48,7 +48,8 @@ def get_sessionmaker() -> sessionmaker[Session]:
     global _sessionmaker
     if _sessionmaker is None:
         get_engine()
-    assert _sessionmaker is not None
+    if _sessionmaker is None:  # pragma: no cover - get_engine() always sets this
+        raise RuntimeError("Database session factory failed to initialize")
     return _sessionmaker
 
 
