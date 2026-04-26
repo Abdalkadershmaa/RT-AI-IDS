@@ -43,6 +43,11 @@ class Settings:
     models_dir: str
     allow_fallback_classifier: bool
     cors_allow_origins: tuple[str, ...]
+    capture_interface: str | None
+    capture_bpf_filter: str | None
+    capture_promiscuous: bool
+    capture_pcap_file: str | None
+    capture_tcpdump_cmd: str | None
 
 
 _cached: Settings | None = None
@@ -59,6 +64,14 @@ def _read_cors_origins(raw: str | None) -> tuple[str, ...]:
     if not raw:
         return ()
     return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
+
+
+def _read_optional_str(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped or None
 
 
 def _build() -> Settings:
@@ -79,6 +92,11 @@ def _build() -> Settings:
         models_dir=os.getenv("MODELS_DIR", "models"),
         allow_fallback_classifier=_read_bool("ALLOW_FALLBACK_CLASSIFIER", default=False),
         cors_allow_origins=_read_cors_origins(os.getenv("CORS_ALLOW_ORIGINS")),
+        capture_interface=_read_optional_str("CAPTURE_INTERFACE"),
+        capture_bpf_filter=_read_optional_str("CAPTURE_BPF_FILTER"),
+        capture_promiscuous=_read_bool("CAPTURE_PROMISCUOUS", default=True),
+        capture_pcap_file=_read_optional_str("CAPTURE_PCAP_FILE"),
+        capture_tcpdump_cmd=_read_optional_str("CAPTURE_CMD"),
     )
     validate_runtime_secrets(
         environment=settings.environment,
