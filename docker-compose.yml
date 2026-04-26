@@ -114,22 +114,36 @@ services:
       - ./models:/app/models:ro
 
   ingestion:
+    # Live capture profile. Activate with:
+    #   docker compose --profile capture up -d ingestion
+    # On Linux, sniffing a host interface (e.g. wlan0 used as Wi-Fi hotspot)
+    # requires `network_mode: host` so the container shares the host's
+    # network namespace. Docker Desktop on Windows/macOS runs containers in
+    # a Linux VM and CANNOT see host Wi-Fi interfaces — for a live demo on
+    # those platforms run ingestion natively (`make ingest`) instead. See
+    # docs/live-demo-setup.md.
     profiles: ["capture"]
     build:
       context: .
       dockerfile: infra/docker/ingestion.Dockerfile
+    network_mode: host
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-in-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      REDIS_URL: redis://redis:6379/0
+      # network_mode: host means we reach redis on localhost
+      REDIS_URL: redis://127.0.0.1:6379/0
+      CAPTURE_INTERFACE: ${CAPTURE_INTERFACE:-eth0}
+      CAPTURE_BPF_FILTER: ${CAPTURE_BPF_FILTER-}
+      CAPTURE_PROMISCUOUS: ${CAPTURE_PROMISCUOUS:-true}
+      CAPTURE_PCAP_FILE: ${CAPTURE_PCAP_FILE-}
+      CAPTURE_CMD: ${CAPTURE_CMD-}
     depends_on:
       redis:
         condition: service_healthy
-    command:
-      ["python", "-m", "services.ingestion.run_sniffer", "--interface", "${CAPTURE_INTERFACE:-eth0}"]
+    command: ["python", "-m", "services.ingestion.run_sniffer"]
     cap_add:
       - NET_RAW
       - NET_ADMIN

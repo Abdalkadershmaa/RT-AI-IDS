@@ -17,6 +17,7 @@ class CaptureConfig:
     bpf_filter: str | None = None
     pcap_file: str | None = None
     tcpdump_cmd: str | None = None
+    promiscuous: bool = True
 
 
 class PacketCaptureAdapter:
@@ -50,6 +51,7 @@ class ScapyLiveAdapter(PacketCaptureAdapter):
             filter=self.config.bpf_filter,
             prn=on_packet,
             store=False,
+            promisc=self.config.promiscuous,
         )
         sniffer.start()
         try:
