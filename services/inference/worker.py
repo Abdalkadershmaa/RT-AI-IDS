@@ -52,7 +52,7 @@ def _handle_predict_job(
             features=job.features,
             context=job.context,
         )
-        record = persist_alert(result, job.context)
+        alert_id = persist_alert(result, job.context)
         broker.store_result(
             _result_key(job.job_id),
             PredictJobResult(
@@ -64,14 +64,14 @@ def _handle_predict_job(
                 risk_label=result.risk_label,
                 risk_score=result.risk_score,
                 rationale=list(result.rationale),
-                alert_id=record.id,
+                alert_id=alert_id,
                 completed_at=result.observed_at,
             ).to_dict(),
             ttl_seconds=ttl,
         )
         logger.info(
             "predict_job_completed",
-            extra={"job_id": job.job_id, "alert_id": record.id, "risk_label": result.risk_label},
+            extra={"job_id": job.job_id, "alert_id": alert_id, "risk_label": result.risk_label},
         )
     except Exception as exc:
         logger.exception("predict_job_failed job_id=%s", job.job_id)

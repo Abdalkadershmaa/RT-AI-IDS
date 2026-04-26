@@ -15,8 +15,8 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def persist_alert(result: DetectionResult, context: dict[str, Any]) -> AttackLog:
-    """Persist a :class:`DetectionResult` and return the saved row (detached)."""
+def persist_alert(result: DetectionResult, context: dict[str, Any]) -> int:
+    """Persist a :class:`DetectionResult` and return the new row's primary key."""
 
     record = AttackLog(
         flow_id=result.flow_id,
@@ -34,8 +34,5 @@ def persist_alert(result: DetectionResult, context: dict[str, Any]) -> AttackLog
     with session_scope() as session:
         session.add(record)
         session.flush()
-        # Materialize fields before the session closes so callers can use the
-        # detached instance freely.
-        snapshot = record.to_dict()
-    record.id = snapshot["id"]
-    return record
+        new_id = int(record.id)
+    return new_id

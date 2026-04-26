@@ -103,11 +103,26 @@ class ModelService:
         explainer: Any = None
 
         classifier_path = self.model_dir / "model.pkl"
+        classifier = None
+        load_error: Exception | None = None
         if pickle and classifier_path.exists():
-            with classifier_path.open("rb") as handle:
-                classifier = pickle.load(handle)
-        else:
+            try:
+                with classifier_path.open("rb") as handle:
+                    classifier = pickle.load(handle)
+            except Exception as exc:  # noqa: BLE001 — incompatible artefacts surface as many error types
+                load_error = exc
+                logger.warning(
+                    "model_service_classifier_load_failed path=%s error=%s",
+                    classifier_path,
+                    exc,
+                )
+        if classifier is None:
             if not self._allow_fallback:
+                if load_error is not None:
+                    raise ModelArtifactError(
+                        f"Failed to load classifier artifact at {classifier_path}: {load_error}. "
+                        "Set ALLOW_FALLBACK_CLASSIFIER=true to boot a deterministic stub."
+                    ) from load_error
                 raise ModelArtifactError(
                     f"Required classifier artifact missing: {classifier_path}. "
                     "Set ALLOW_FALLBACK_CLASSIFIER=true to boot a deterministic stub."
@@ -116,16 +131,25 @@ class ModelService:
 
         scaler_path = self.model_dir / "preprocess_pipeline_AE_39ft.save"
         if joblib and scaler_path.exists():
-            ae_scaler = joblib.load(scaler_path)
+            try:
+                ae_scaler = joblib.load(scaler_path)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("model_service_scaler_load_failed error=%s", exc)
 
         ae_path = self.model_dir / "autoencoder_39ft.hdf5"
         if keras and ae_path.exists():
-            ae_model = keras.models.load_model(ae_path)
+            try:
+                ae_model = keras.models.load_model(ae_path)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("model_service_autoencoder_load_failed error=%s", exc)
 
         explainer_path = self.model_dir / "explainer"
         if dill and explainer_path.exists():
-            with explainer_path.open("rb") as handle:
-                explainer = dill.load(handle)
+            try:
+                with explainer_path.open("rb") as handle:
+                    explainer = dill.load(handle)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("model_service_explainer_load_failed error=%s", exc)
 
         return LoadedModels(
             classifier=classifier,
