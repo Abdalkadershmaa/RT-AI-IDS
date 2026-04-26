@@ -20,6 +20,11 @@ class Flow:
 
 
 
+        # TODO(model-retrain): Upstream copy/paste bug — `setFwdPSHFlags` is
+        # set from URG, not PSH. The currently-shipped `models/model.pkl` was
+        # trained against this buggy feature, so "fixing" it would degrade
+        # accuracy until the model is retrained. Track in docs/architecture.md
+        # under finding Q1. Do NOT change without retraining.
         self.flowFeatures.setFwdPSHFlags(0 if not packet.getURGFlag() else 1)
         self.flowFeatures.setMaxPacketLen(packet.getPayloadBytes())
         self.flowFeatures.setPacketLenMean(packet.getPayloadBytes())
@@ -83,6 +88,8 @@ class Flow:
         else:
             self.fwdPacketInfos.append(packetInfo)
             self.fwdIAT.append((packetInfo.getTimestamp() - self.fwdLastSeen) * 1000 * 1000)
+            # TODO(model-retrain): Same upstream URG-vs-PSH bug as in __init__.
+            # Kept intentionally to match the trained model; see docs/architecture.md (Q1).
             self.flowFeatures.setFwdPSHFlags(max(1 if packetInfo.getURGFlag() else 0,
                                                  self.flowFeatures.getFwdPSHFlags()))
             self.fwd_packet_count = self.fwd_packet_count + 1

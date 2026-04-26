@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import subprocess
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
-from scapy.all import AsyncSniffer, IP, TCP, UDP, PcapReader  # type: ignore
+from scapy.all import IP, TCP, UDP, AsyncSniffer, PcapReader  # type: ignore
 
 from shared.schemas import PacketEvent
 
@@ -27,6 +27,9 @@ class PacketCaptureAdapter:
 class ScapyLiveAdapter(PacketCaptureAdapter):
     def __init__(self, config: CaptureConfig) -> None:
         self.config = config
+        # Number of packets dropped because the bounded queue was full.
+        # Exposed so the ingestion service can emit a metric.
+        self.dropped = 0
 
     async def packets(self) -> AsyncIterator[PacketEvent]:
         # Bound queue to prevent unbounded memory growth under packet bursts.
@@ -39,6 +42,7 @@ class ScapyLiveAdapter(PacketCaptureAdapter):
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
                     # Drop newest burst packet instead of exhausting memory.
+                    self.dropped += 1
                     return
 
         sniffer = AsyncSniffer(

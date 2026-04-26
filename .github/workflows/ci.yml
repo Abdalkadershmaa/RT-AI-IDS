@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install runtime + dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            Flask==3.0.3 Flask-JWT-Extended==4.6.0 Werkzeug==3.0.6 \
+            SQLAlchemy==2.0.36 redis==5.2.0 python-dotenv==1.0.1 pydantic==2.9.2 \
+            scapy==2.5.0 psutil==6.1.0 numpy==1.26.4 scikit-learn==1.5.2 \
+            alembic==1.13.3 pytest==8.3.3 pytest-timeout==2.3.1 fakeredis==2.26.1 \
+            ruff==0.6.9
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Pytest
+        env:
+          ENVIRONMENT: test
+          ALLOW_FALLBACK_CLASSIFIER: "true"
+        run: pytest --timeout=20
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images (no push)
+        run: |
+          docker build -f infra/docker/api.Dockerfile -t rt-ai-ids/api:ci .
+          docker build -f infra/docker/flow_builder.Dockerfile -t rt-ai-ids/flow-builder:ci .
+          docker build -f infra/docker/inference.Dockerfile -t rt-ai-ids/inference:ci .
+          docker build -f infra/docker/ingestion.Dockerfile -t rt-ai-ids/ingestion:ci .

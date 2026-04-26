@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from shared.schemas import DetectionResult
@@ -39,6 +39,6 @@ class InferenceService:
             risk_label=_risk_label(risk_score),
             risk_score=risk_score,
             rationale=rationale,
-            observed_at=datetime.now(tz=timezone.utc).isoformat(),
+            observed_at=datetime.now(tz=UTC).isoformat(),
         )
 
