@@ -1,5 +1,5 @@
 .PHONY: help bootstrap install lint format typecheck test test-unit test-integration \
-        compose-up compose-down compose-logs migrate security clean
+        compose-up compose-down compose-logs migrate security clean ingest list-interfaces
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -16,6 +16,8 @@ help:
 	@echo "  compose-down     Stop and remove all services"
 	@echo "  compose-logs     Follow logs for all services"
 	@echo "  migrate          Run Alembic migrations against DATABASE_URL"
+	@echo "  list-interfaces  Print available capture interfaces (helpful for live demo)"
+	@echo "  ingest           Run ingestion natively against CAPTURE_INTERFACE (sudo required)"
 
 bootstrap:
 	@if [ -f .env ]; then \
@@ -76,3 +78,14 @@ security:
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov dist build *.egg-info
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+
+list-interfaces:
+	@$(PYTHON) -c "from scapy.all import get_if_list; [print(' -', i) for i in get_if_list()]"
+
+ingest:
+	@if [ -z "$$CAPTURE_INTERFACE" ]; then \
+		echo "CAPTURE_INTERFACE is not set. Source your .env first: 'set -a && source .env && set +a'"; \
+		exit 1; \
+	fi
+	@echo "Sniffing $$CAPTURE_INTERFACE in promiscuous mode (Ctrl-C to stop)..."
+	sudo -E $(PYTHON) -m services.ingestion.run_sniffer

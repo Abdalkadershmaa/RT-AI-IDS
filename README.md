@@ -92,8 +92,20 @@ The `ingestion` service is gated behind a Compose profile because it needs
 `NET_RAW` / `NET_ADMIN`:
 
 ```bash
-CAPTURE_INTERFACE=eth0 docker compose --profile capture up -d ingestion
+make list-interfaces                                        # find your NIC name
+echo "CAPTURE_INTERFACE=wlan0" >> .env                      # or whatever it is
+docker compose --profile capture up -d ingestion            # Linux
+# Windows / macOS: see docs/live-demo-setup.md (run ingestion natively)
 ```
+
+Promiscuous mode is **enabled by default** so the sniffer sees traffic
+between other hosts on the same L2 segment (i.e. attacker → victim
+flowing through your laptop's hotspot NIC). Toggle with
+`CAPTURE_PROMISCUOUS=false` if your network policy forbids it.
+
+For the full demo-day walkthrough — finding the right interface on
+Linux/Windows/macOS, attacker setup, Nmap and DoS scripts, troubleshooting
+— see [docs/live-demo-setup.md](docs/live-demo-setup.md).
 
 ## License
 
