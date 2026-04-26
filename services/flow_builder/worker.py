@@ -1,11 +1,19 @@
+"""Flow-builder worker.
+
+Consumes ``packet_ingest`` from the broker, threads packets through a
+:class:`FlowBuilderService`, and republishes any terminated flows onto
+``flow_inference`` for the inference worker.
+"""
+
 from __future__ import annotations
 
-import json
 import logging
-import redis
+import os
+import socket
 
+from shared.broker import RedisStreamsBroker
 from shared.config import get_settings
-from shared.logging_utils import configure_logging
+from shared.observability import bind_correlation_id, configure_logging
 from shared.schemas import PacketEvent
 
 from .service import FlowBuilderService
@@ -13,28 +21,34 @@ from .service import FlowBuilderService
 logger = logging.getLogger(__name__)
 
 
+def _consumer_name() -> str:
+    return f"flow-builder-{socket.gethostname()}-{os.getpid()}"
+
+
 def run() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
-    client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+    broker = RedisStreamsBroker()
     flow_builder = FlowBuilderService()
+    consumer = _consumer_name()
+    logger.info("flow_builder_starting consumer=%s stream=%s", consumer, settings.ingest_stream)
 
-    while True:
-        raw = client.blpop(settings.ingest_queue, timeout=5)
-        if not raw:
-            continue
-        _, payload = raw
+    for message in broker.consume(streams=[settings.ingest_stream], consumer=consumer):
         try:
-            packet = PacketEvent(**json.loads(payload))
+            bind_correlation_id(message.message_id)
+            packet = PacketEvent(**message.payload)
             flow_events = flow_builder.process_packet(packet)
             for flow_event in flow_events:
-                client.rpush(settings.inference_queue, json.dumps(flow_event.to_dict()))
-        except Exception as exc:
-            # Keep queue consumption alive when malformed records appear.
-            logger.warning("failed_to_process_packet_event error=%s", exc)
-            continue
+                broker.publish(settings.flow_inference_stream, flow_event.to_dict())
+        except Exception:
+            logger.exception(
+                "flow_builder_message_failed stream=%s id=%s",
+                message.stream,
+                message.message_id,
+            )
+        finally:
+            broker.ack(message.stream, message.message_id)
 
 
 if __name__ == "__main__":
     run()
-

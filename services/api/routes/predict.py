@@ -1,58 +1,98 @@
+"""Async prediction endpoints.
+
+``POST /api/v1/predict`` validates the input, enqueues a :class:`PredictJob`
+on the broker, and returns immediately with HTTP 202 + a ``job_id``. The
+inference worker picks the job up, runs the model, persists an alert, and
+caches a :class:`PredictJobResult` keyed by ``job_id``.
+
+``GET /api/v1/predict/<job_id>`` returns the cached result, or 404 when the
+TTL has expired (the alert stays in the database either way).
+"""
+
+from __future__ import annotations
+
+import logging
 import uuid
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, url_for
 from flask_jwt_extended import jwt_required
+from pydantic import ValidationError
 
-from services.inference import InferenceService, ModelService
+from shared.config import get_settings
+from shared.observability import bind_correlation_id
+from shared.schemas import PredictJob
 
-from ..extensions import db
-from ..models import AttackLog
+from ..deps import get_broker
+from ..schemas.predict import (
+    PredictAcceptedResponse,
+    PredictRequest,
+    PredictResultResponse,
+)
 
+logger = logging.getLogger(__name__)
 predict_bp = Blueprint("predict", __name__, url_prefix="/api/v1")
-inference_service = InferenceService(ModelService())
 
 
-def _safe_int(value, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
+def _result_key(job_id: str) -> str:
+    return f"predict_results:{job_id}"
+
+
+def _serialize_validation(exc: ValidationError) -> list[dict[str, str]]:
+    """Render a pydantic validation error as JSON-safe primitives."""
+
+    return [
+        {"loc": ".".join(str(part) for part in err.get("loc", ())), "msg": err.get("msg", "")}
+        for err in exc.errors(include_url=False, include_input=False)
+    ]
 
 
 @predict_bp.post("/predict")
 @jwt_required()
 def predict() -> tuple:
-    body = request.get_json(silent=True) or {}
-    features = body.get("features")
-    context = body.get("context", {})
-    if not isinstance(features, list) or len(features) != 39:
-        return jsonify({"error": "features must be a list of 39 numeric values"}), 400
+    """Enqueue a prediction job. Returns 202 + ``job_id``."""
 
     try:
-        normalized_features = [float(x) for x in features]
-    except (TypeError, ValueError):
-        return jsonify({"error": "features must contain numeric values"}), 400
+        body = PredictRequest.model_validate(request.get_json(silent=True) or {})
+    except ValidationError as exc:
+        return (
+            jsonify({"error": "invalid_request", "detail": _serialize_validation(exc)}),
+            400,
+        )
 
-    flow_id = str(body.get("flow_id") or uuid.uuid4())
-    result = inference_service.classify_flow(
+    job_id = uuid.uuid4().hex
+    flow_id = body.flow_id or job_id
+    bind_correlation_id(job_id)
+
+    job = PredictJob(
+        job_id=job_id,
         flow_id=flow_id,
-        features=normalized_features,
-        context=context if isinstance(context, dict) else {},
+        features=body.features,
+        context=body.context,
     )
-    record = AttackLog(
-        flow_id=result.flow_id,
-        source_ip=str((context or {}).get("src_ip", "")),
-        source_port=_safe_int((context or {}).get("src_port", 0)),
-        destination_ip=str((context or {}).get("dst_ip", "")),
-        destination_port=_safe_int((context or {}).get("dst_port", 0)),
-        protocol=str((context or {}).get("protocol", "")),
-        classification=result.classification,
-        probability=result.probability,
-        risk_label=result.risk_label,
-        risk_score=result.risk_score,
-        rationale=result.rationale,
-    )
-    db.session.add(record)
-    db.session.commit()
-    return jsonify(record.to_dict()), 201
 
+    settings = get_settings()
+    broker = get_broker()
+    broker.publish(settings.predict_jobs_stream, job.to_dict())
+
+    poll_url = url_for("predict.predict_result", job_id=job_id)
+    response = PredictAcceptedResponse(
+        job_id=job_id,
+        status="pending",
+        poll_url=poll_url,
+    )
+    logger.info("predict_job_enqueued", extra={"job_id": job_id, "flow_id": flow_id})
+    return jsonify(response.model_dump()), 202
+
+
+@predict_bp.get("/predict/<job_id>")
+@jwt_required()
+def predict_result(job_id: str) -> tuple:
+    """Return the cached result for ``job_id`` (404 if expired)."""
+
+    bind_correlation_id(job_id)
+    broker = get_broker()
+    result = broker.load_result(_result_key(job_id))
+    if result is None:
+        return jsonify({"error": "not_found", "detail": "job_id unknown or expired"}), 404
+    response = PredictResultResponse.model_validate(result)
+    return jsonify(response.model_dump()), 200

@@ -1,9 +1,10 @@
-import logging
+"""Backward-compatible re-export.
 
+The real implementation lives in :mod:`shared.observability.logging`. This
+shim is kept so older imports such as ``from shared.logging_utils import
+configure_logging`` continue to work.
+"""
 
-def configure_logging(level: str = "INFO") -> None:
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+from shared.observability import configure_logging
 
+__all__ = ["configure_logging"]

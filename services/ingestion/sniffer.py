@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
+import subprocess  # nosec B404 - used to spawn tcpdump in fallback capture path
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
-from scapy.all import AsyncSniffer, IP, TCP, UDP, PcapReader  # type: ignore
+from scapy.all import IP, TCP, UDP, AsyncSniffer, PcapReader  # type: ignore
 
 from shared.schemas import PacketEvent
 
@@ -27,6 +27,9 @@ class PacketCaptureAdapter:
 class ScapyLiveAdapter(PacketCaptureAdapter):
     def __init__(self, config: CaptureConfig) -> None:
         self.config = config
+        # Number of packets dropped because the bounded queue was full.
+        # Exposed so the ingestion service can emit a metric.
+        self.dropped = 0
 
     async def packets(self) -> AsyncIterator[PacketEvent]:
         # Bound queue to prevent unbounded memory growth under packet bursts.
@@ -39,6 +42,7 @@ class ScapyLiveAdapter(PacketCaptureAdapter):
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
                     # Drop newest burst packet instead of exhausting memory.
+                    self.dropped += 1
                     return
 
         sniffer = AsyncSniffer(
@@ -80,12 +84,15 @@ class TcpdumpJsonAdapter(PacketCaptureAdapter):
     async def packets(self) -> AsyncIterator[PacketEvent]:
         if not self.config.tcpdump_cmd:
             return
-        process = await asyncio.create_subprocess_shell(
+        # nosec B602 - tcpdump_cmd comes from operator-controlled CAPTURE_CMD env var,
+        # never from request input.
+        process = await asyncio.create_subprocess_shell(  # nosec B602
             self.config.tcpdump_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        assert process.stdout is not None
+        if process.stdout is None:
+            raise RuntimeError("tcpdump subprocess did not provide a stdout pipe")
         while True:
             line = await process.stdout.readline()
             if not line:

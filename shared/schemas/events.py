@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -32,7 +32,7 @@ class FlowFeatureEvent:
             flow_id=flow_id,
             features=features,
             context=context,
-            observed_at=datetime.now(tz=timezone.utc).isoformat(),
+            observed_at=datetime.now(tz=UTC).isoformat(),
         )
 
     def to_dict(self) -> dict[str, Any]:
