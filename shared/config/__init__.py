@@ -1,3 +1,13 @@
-from .settings import Settings, get_settings, reload_settings
+from .settings import (
+    InsecureFallbackClassifierError,
+    Settings,
+    get_settings,
+    reload_settings,
+)
 
-__all__ = ["Settings", "get_settings", "reload_settings"]
+__all__ = [
+    "InsecureFallbackClassifierError",
+    "Settings",
+    "get_settings",
+    "reload_settings",
+]

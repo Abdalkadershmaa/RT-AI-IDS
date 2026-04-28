@@ -48,6 +48,11 @@ class Settings:
     capture_promiscuous: bool
     capture_pcap_file: str | None
     capture_tcpdump_cmd: str | None
+    broker_max_stream_len: int
+    broker_max_retries: int
+    db_pool_size: int
+    db_max_overflow: int
+    db_pool_timeout: int
 
 
 _cached: Settings | None = None
@@ -97,6 +102,11 @@ def _build() -> Settings:
         capture_promiscuous=_read_bool("CAPTURE_PROMISCUOUS", default=True),
         capture_pcap_file=_read_optional_str("CAPTURE_PCAP_FILE"),
         capture_tcpdump_cmd=_read_optional_str("CAPTURE_CMD"),
+        broker_max_stream_len=int(os.getenv("BROKER_MAX_STREAM_LEN", "100000")),
+        broker_max_retries=int(os.getenv("BROKER_MAX_RETRIES", "3")),
+        db_pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+        db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+        db_pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
     )
     validate_runtime_secrets(
         environment=settings.environment,
@@ -104,7 +114,26 @@ def _build() -> Settings:
         jwt_secret_key=settings.jwt_secret_key,
         admin_password=settings.admin_password,
     )
+    _validate_runtime_posture(settings)
     return settings
+
+
+class InsecureFallbackClassifierError(RuntimeError):
+    """Raised when a non-dev environment enables the deterministic stub model."""
+
+
+def _validate_runtime_posture(settings: Settings) -> None:
+    """Reject combinations that are unsafe outside development/test."""
+
+    env = (settings.environment or "").strip().lower()
+    if env.startswith("dev") or env == "test":
+        return
+    if settings.allow_fallback_classifier:
+        raise InsecureFallbackClassifierError(
+            "Refusing to start: ALLOW_FALLBACK_CLASSIFIER=true is permitted only "
+            "in development and test environments. Production must load real "
+            "model artifacts from MODELS_DIR."
+        )
 
 
 def get_settings() -> Settings:

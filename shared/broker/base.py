@@ -25,7 +25,12 @@ class Broker(ABC):
     """Minimal interface every broker implementation must support."""
 
     @abstractmethod
-    def publish(self, stream: str, payload: dict[str, Any]) -> str: ...
+    def publish(
+        self,
+        stream: str,
+        payload: dict[str, Any],
+        maxlen: int | None = None,
+    ) -> str: ...
 
     @abstractmethod
     def consume(

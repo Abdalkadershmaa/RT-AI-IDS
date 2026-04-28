@@ -7,5 +7,6 @@ producers or consumers.
 
 from .base import Broker, BrokerMessage
 from .redis_streams import RedisStreamsBroker
+from .retry import process_with_retries
 
-__all__ = ["Broker", "BrokerMessage", "RedisStreamsBroker"]
+__all__ = ["Broker", "BrokerMessage", "RedisStreamsBroker", "process_with_retries"]

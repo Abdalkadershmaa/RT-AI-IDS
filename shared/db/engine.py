@@ -20,14 +20,23 @@ _engine: Engine | None = None
 _sessionmaker: sessionmaker[Session] | None = None
 
 
-def _engine_kwargs(database_url: str) -> dict[str, Any]:
-    if database_url.startswith("sqlite"):
+def _engine_kwargs(settings: Any) -> dict[str, Any]:
+    """Build keyword arguments for ``create_engine`` from current settings.
+
+    SQLite (used by the test suite) cannot be pooled and gets a small
+    in-process bypass. Postgres pools are sized via ``DB_POOL_SIZE``,
+    ``DB_MAX_OVERFLOW``, and ``DB_POOL_TIMEOUT`` so the per-process cap stays
+    well below Postgres' ``max_connections`` even with multiple replicas.
+    """
+
+    if settings.database_url.startswith("sqlite"):
         return {"connect_args": {"check_same_thread": False}, "future": True}
     return {
         "future": True,
         "pool_pre_ping": True,
-        "pool_size": 10,
-        "max_overflow": 20,
+        "pool_size": settings.db_pool_size,
+        "max_overflow": settings.db_max_overflow,
+        "pool_timeout": settings.db_pool_timeout,
     }
 
 
@@ -37,7 +46,7 @@ def get_engine() -> Engine:
     global _engine, _sessionmaker
     if _engine is None:
         settings = get_settings()
-        _engine = create_engine(settings.database_url, **_engine_kwargs(settings.database_url))
+        _engine = create_engine(settings.database_url, **_engine_kwargs(settings))
         _sessionmaker = sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
     return _engine
 

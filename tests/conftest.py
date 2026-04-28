@@ -51,7 +51,15 @@ class FakeBroker:
         self.published: dict[str, list[dict[str, Any]]] = {}
         self.results: dict[str, dict[str, Any]] = {}
 
-    def publish(self, stream: str, payload: dict[str, Any]) -> str:
+    def publish(
+        self,
+        stream: str,
+        payload: dict[str, Any],
+        maxlen: int | None = None,
+    ) -> str:
+        # ``maxlen`` is accepted for parity with :class:`Broker`; the in-memory
+        # fake never grows large enough to need trimming.
+        del maxlen
         self.published.setdefault(stream, []).append(payload)
         return f"{stream}-{len(self.published[stream])}"
 

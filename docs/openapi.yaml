@@ -85,13 +85,22 @@ components:
             description: Finite (no NaN/Inf) numeric flow feature
         context:
           type: object
-          description: Free-form metadata persisted with the alert
+          description: |
+            Free-form metadata persisted with the alert. Canonical field names
+            are ``source_ip`` / ``source_port`` / ``destination_ip`` /
+            ``destination_port``; the legacy short forms ``src_ip`` / ``src_port``
+            / ``dst_ip`` / ``dst_port`` are still accepted for backward
+            compatibility with internal flow-pipeline events.
           properties:
-            src_ip:    { type: string }
-            src_port:  { type: integer }
-            dst_ip:    { type: string }
-            dst_port:  { type: integer }
-            protocol:  { type: string }
+            source_ip:        { type: string }
+            source_port:      { type: integer }
+            destination_ip:   { type: string }
+            destination_port: { type: integer }
+            protocol:         { type: string }
+            src_ip:           { type: string, deprecated: true }
+            src_port:         { type: integer, deprecated: true }
+            dst_ip:           { type: string, deprecated: true }
+            dst_port:         { type: integer, deprecated: true }
 
     PredictAcceptedResponse:
       type: object
