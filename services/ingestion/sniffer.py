@@ -36,15 +36,24 @@ class ScapyLiveAdapter(PacketCaptureAdapter):
         # Bound queue to prevent unbounded memory growth under packet bursts.
         queue: asyncio.Queue[PacketEvent] = asyncio.Queue(maxsize=10_000)
 
+        # Scapy's AsyncSniffer runs `prn` in a *kernel thread*, not on the
+        # event loop. Mutating an asyncio.Queue from a non-loop thread is not
+        # safe (cpython issue #97970): the awaiting coroutine may not be woken
+        # up reliably. Hop back to the loop via call_soon_threadsafe.
+        loop = asyncio.get_running_loop()
+
+        def _enqueue(event: PacketEvent) -> None:
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                # Drop newest burst packet instead of exhausting memory.
+                self.dropped += 1
+
         def on_packet(pkt) -> None:
             event = _convert_packet(pkt)
-            if event:
-                try:
-                    queue.put_nowait(event)
-                except asyncio.QueueFull:
-                    # Drop newest burst packet instead of exhausting memory.
-                    self.dropped += 1
-                    return
+            if event is None:
+                return
+            loop.call_soon_threadsafe(_enqueue, event)
 
         sniffer = AsyncSniffer(
             iface=self.config.interface,

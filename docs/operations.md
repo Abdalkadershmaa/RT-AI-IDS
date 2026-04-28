@@ -27,7 +27,7 @@ TOKEN=$(curl -s -X POST http://localhost:5000/api/v1/auth/token \
 JOB=$(curl -s -X POST http://localhost:5000/api/v1/predict \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"features": [0.1] * 39, "context": {"src_ip": "10.0.0.1"}}' \
+  -d '{"features": [0.1] * 39, "context": {"source_ip": "10.0.0.1"}}' \
   | jq -r .job_id)
 
 # Poll the result

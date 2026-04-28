@@ -5,6 +5,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ids}
       POSTGRES_USER: ${POSTGRES_USER:-ids}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ids}
+    # Bump max_connections so multiple replicas (api + workers + cli + readiness)
+    # don't exhaust the default 100-slot ceiling under load. Pair with
+    # DB_POOL_SIZE / DB_MAX_OVERFLOW on the application side.
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -58,6 +65,11 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ids}:${POSTGRES_PASSWORD:-ids}@db:5432/${POSTGRES_DB:-ids}
       REDIS_URL: redis://redis:6379/0
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+      BROKER_MAX_STREAM_LEN: ${BROKER_MAX_STREAM_LEN:-100000}
+      BROKER_MAX_RETRIES: ${BROKER_MAX_RETRIES:-3}
     depends_on:
       db:
         condition: service_healthy
@@ -86,6 +98,11 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ids}:${POSTGRES_PASSWORD:-ids}@db:5432/${POSTGRES_DB:-ids}
       REDIS_URL: redis://redis:6379/0
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+      BROKER_MAX_STREAM_LEN: ${BROKER_MAX_STREAM_LEN:-100000}
+      BROKER_MAX_RETRIES: ${BROKER_MAX_RETRIES:-3}
     depends_on:
       redis:
         condition: service_healthy
@@ -103,6 +120,11 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ids}:${POSTGRES_PASSWORD:-ids}@db:5432/${POSTGRES_DB:-ids}
       REDIS_URL: redis://redis:6379/0
       ALLOW_FALLBACK_CLASSIFIER: ${ALLOW_FALLBACK_CLASSIFIER:-false}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+      BROKER_MAX_STREAM_LEN: ${BROKER_MAX_STREAM_LEN:-100000}
+      BROKER_MAX_RETRIES: ${BROKER_MAX_RETRIES:-3}
     depends_on:
       db:
         condition: service_healthy

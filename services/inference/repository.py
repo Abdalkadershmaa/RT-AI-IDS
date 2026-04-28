@@ -1,4 +1,12 @@
-"""Persistence helpers for inference results. Flask-free."""
+"""Persistence helpers for inference results. Flask-free.
+
+Public API context fields are ``source_ip`` / ``source_port`` /
+``destination_ip`` / ``destination_port`` to match the response payload and
+the database column names. Internal flow-pipeline events still emit
+``src_ip`` / ``dst_ip`` (matching :class:`shared.schemas.events.PacketEvent`),
+so we accept both shapes here and prefer the canonical names when both are
+present.
+"""
 
 from __future__ import annotations
 
@@ -15,15 +23,27 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _coalesce(context: dict[str, Any], *names: str, default: Any = "") -> Any:
+    """Return the first non-empty context value among ``names``."""
+
+    for name in names:
+        value = context.get(name)
+        if value not in (None, ""):
+            return value
+    return default
+
+
 def persist_alert(result: DetectionResult, context: dict[str, Any]) -> int:
     """Persist a :class:`DetectionResult` and return the new row's primary key."""
 
     record = AttackLog(
         flow_id=result.flow_id,
-        source_ip=str(context.get("src_ip", "")),
-        source_port=_safe_int(context.get("src_port", 0)),
-        destination_ip=str(context.get("dst_ip", "")),
-        destination_port=_safe_int(context.get("dst_port", 0)),
+        source_ip=str(_coalesce(context, "source_ip", "src_ip", default="")),
+        source_port=_safe_int(_coalesce(context, "source_port", "src_port", default=0)),
+        destination_ip=str(_coalesce(context, "destination_ip", "dst_ip", default="")),
+        destination_port=_safe_int(
+            _coalesce(context, "destination_port", "dst_port", default=0)
+        ),
         protocol=str(context.get("protocol", "")),
         classification=result.classification,
         probability=result.probability,

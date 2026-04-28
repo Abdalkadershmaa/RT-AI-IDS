@@ -50,14 +50,21 @@ Request body (must contain exactly 39 finite floats):
   "flow_id": "client-supplied-or-omitted",
   "features": [1.0, 2.0, ..., 39.0],
   "context": {
-    "src_ip": "10.0.0.1",
-    "src_port": 1234,
-    "dst_ip": "10.0.0.2",
-    "dst_port": 80,
+    "source_ip": "10.0.0.1",
+    "source_port": 1234,
+    "destination_ip": "10.0.0.2",
+    "destination_port": 80,
     "protocol": "TCP"
   }
 }
 ```
+
+The canonical context field names are `source_ip` / `source_port` /
+`destination_ip` / `destination_port` — same shape as the alert response so
+client code can reuse a single model. The legacy short forms (`src_ip`,
+`src_port`, `dst_ip`, `dst_port`) are still accepted for backward
+compatibility with internal flow-pipeline events but are deprecated for new
+clients.
 
 **202 Accepted**
 ```json

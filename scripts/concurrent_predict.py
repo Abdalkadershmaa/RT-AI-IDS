@@ -56,8 +56,8 @@ def _request_body(i: int, features: list[float]) -> dict:
         "flow_id": f"concurrent-{i}",
         "features": features,
         "context": {
-            "src_ip": "10.0.0.1",
-            "dst_ip": "10.0.0.2",
+            "source_ip": "10.0.0.1",
+            "destination_ip": "10.0.0.2",
             "protocol": "TCP",
         },
     }
