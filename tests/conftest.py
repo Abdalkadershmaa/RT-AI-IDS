@@ -19,6 +19,12 @@ import pytest
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("ALLOW_FALLBACK_CLASSIFIER", "true")
 os.environ.setdefault("MODELS_DIR", str(Path(__file__).parent / "_no_models"))
+# Use the limiter's in-memory backend during tests — there's no real Redis.
+os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
+# Default auth rate limit is permissive so the existing integration suite
+# (which logs in once per test class) is never throttled. Specific tests
+# that exercise the rate limiter override this via monkeypatch.
+os.environ.setdefault("AUTH_RATE_LIMIT", "1000 per minute")
 
 
 @pytest.fixture
@@ -99,6 +105,16 @@ def api_client(temp_database_url: str, fake_broker: FakeBroker, monkeypatch: pyt
     from shared.config import reload_settings
 
     reload_settings()
+
+    # Drop any rate-limit counters left over from a previous test before
+    # creating the app so each test starts with a fresh quota.
+    from services.api.extensions import limiter
+
+    try:
+        limiter.reset()
+    except Exception:  # pragma: no cover - storage may not be initialised yet
+        pass
+
     from services.api.app import create_app
 
     app = create_app()

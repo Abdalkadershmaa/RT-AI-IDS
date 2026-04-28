@@ -53,6 +53,10 @@ class Settings:
     db_pool_size: int
     db_max_overflow: int
     db_pool_timeout: int
+    auth_rate_limit: str
+    attack_log_retention_days: int
+    model_version: str
+    model_dataset: str
 
 
 _cached: Settings | None = None
@@ -107,6 +111,10 @@ def _build() -> Settings:
         db_pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
         db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
         db_pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        auth_rate_limit=os.getenv("AUTH_RATE_LIMIT", "5 per minute"),
+        attack_log_retention_days=int(os.getenv("ATTACK_LOG_RETENTION_DAYS", "90")),
+        model_version=os.getenv("MODEL_VERSION", "unknown"),
+        model_dataset=os.getenv("MODEL_DATASET", "CICIDS2017"),
     )
     validate_runtime_secrets(
         environment=settings.environment,

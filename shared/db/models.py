@@ -30,6 +30,12 @@ class AttackLog(Base):
     risk_label: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     risk_score: Mapped[float] = mapped_column(Float, nullable=False)
     rationale: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # Metadata about the model that produced this alert. Captured per-row so
+    # historical alerts remain traceable to a specific model build even after
+    # the live model is retrained / rolled forward. Nullable for rows that
+    # predate the column (existing deployments back-filled by migration).
+    model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    model_dataset: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(tz=UTC),
@@ -53,5 +59,7 @@ class AttackLog(Base):
             "risk_label": self.risk_label,
             "risk_score": self.risk_score,
             "rationale": self.rationale,
+            "model_version": self.model_version,
+            "model_dataset": self.model_dataset,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

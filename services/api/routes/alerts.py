@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from shared.db import AttackLog, session_scope
 
+from ..responses import envelope_response
 from ..schemas.alerts import AlertsListQuery
 
 alerts_bp = Blueprint("alerts", __name__, url_prefix="/api/v1/alerts")
@@ -24,18 +25,13 @@ def list_alerts() -> tuple:
             before_id=request.args.get("before_id", default=None, type=int),
         )
     except ValidationError:
-        return jsonify({"error": "invalid_request", "status": 400}), 400
+        return envelope_response("invalid_request", 400)
 
     if query.since_id is not None and query.before_id is not None:
-        return (
-            jsonify(
-                {
-                    "error": "invalid_request",
-                    "status": 400,
-                    "detail": "since_id and before_id are mutually exclusive",
-                }
-            ),
+        return envelope_response(
+            "invalid_request",
             400,
+            "since_id and before_id are mutually exclusive",
         )
 
     stmt = select(AttackLog)
@@ -64,6 +60,6 @@ def get_alert(alert_id: int) -> tuple:
     with session_scope() as session:
         record = session.get(AttackLog, alert_id)
         if record is None:
-            return jsonify({"error": "not_found"}), 404
+            return envelope_response("not_found", 404)
         payload = record.to_dict()
     return jsonify(payload), 200

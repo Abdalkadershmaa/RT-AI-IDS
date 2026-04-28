@@ -6,12 +6,18 @@ the database column names. Internal flow-pipeline events still emit
 ``src_ip`` / ``dst_ip`` (matching :class:`shared.schemas.events.PacketEvent`),
 so we accept both shapes here and prefer the canonical names when both are
 present.
+
+Each row also captures the model version and dataset that produced it
+(``MODEL_VERSION`` / ``MODEL_DATASET`` env vars). This makes historical
+alerts traceable to a specific model build after the live model is rolled
+forward.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from shared.config import get_settings
 from shared.db import AttackLog, session_scope
 from shared.schemas import DetectionResult
 
@@ -36,6 +42,7 @@ def _coalesce(context: dict[str, Any], *names: str, default: Any = "") -> Any:
 def persist_alert(result: DetectionResult, context: dict[str, Any]) -> int:
     """Persist a :class:`DetectionResult` and return the new row's primary key."""
 
+    settings = get_settings()
     record = AttackLog(
         flow_id=result.flow_id,
         source_ip=str(_coalesce(context, "source_ip", "src_ip", default="")),
@@ -50,6 +57,8 @@ def persist_alert(result: DetectionResult, context: dict[str, Any]) -> int:
         risk_label=result.risk_label,
         risk_score=result.risk_score,
         rationale=list(result.rationale),
+        model_version=settings.model_version,
+        model_dataset=settings.model_dataset,
     )
     with session_scope() as session:
         session.add(record)

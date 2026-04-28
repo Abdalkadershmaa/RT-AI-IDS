@@ -38,6 +38,8 @@ class PredictJobResult:
     risk_score: float | None = None
     rationale: list[str] = field(default_factory=list)
     alert_id: int | None = None
+    model_version: str | None = None
+    model_dataset: str | None = None
     error: str | None = None
     completed_at: str | None = None
 

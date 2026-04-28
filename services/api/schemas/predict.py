@@ -37,6 +37,11 @@ class PredictAcceptedResponse(BaseModel):
 class PredictResultResponse(BaseModel):
     """Returned by ``GET /api/v1/predict/<job_id>``."""
 
+    # ``model_version`` / ``model_dataset`` collide with Pydantic v2's
+    # ``model_`` reserved namespace; opt out so the public field names match
+    # the OpenAPI schema and Flutter / TypeScript clients.
+    model_config = ConfigDict(protected_namespaces=())
+
     job_id: str
     status: str
     flow_id: str | None = None
@@ -46,5 +51,7 @@ class PredictResultResponse(BaseModel):
     risk_score: float | None = None
     rationale: list[str] = Field(default_factory=list)
     alert_id: int | None = None
+    model_version: str | None = None
+    model_dataset: str | None = None
     error: str | None = None
     completed_at: str | None = None

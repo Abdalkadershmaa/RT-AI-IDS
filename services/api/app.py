@@ -1,9 +1,9 @@
 """Flask application factory.
 
-Composition only: build the Flask app, attach JWT, install blueprints, and
-register error handlers. Database access is delegated to :mod:`shared.db` so
-the worker processes can use the same persistence layer without importing
-Flask.
+Composition only: build the Flask app, attach JWT + rate limiter, install
+blueprints, register error handlers, and register CLI commands. Database
+access is delegated to :mod:`shared.db` so the worker processes can use the
+same persistence layer without importing Flask.
 """
 
 from __future__ import annotations
@@ -14,8 +14,9 @@ from flask_cors import CORS
 from shared.config import get_settings
 from shared.observability import configure_logging
 
+from .cli import register_cli
 from .error_handlers import register_error_handlers
-from .extensions import jwt
+from .extensions import init_limiter, jwt
 from .routes import alerts_bp, auth_bp, health_bp, predict_bp, stats_bp
 
 
@@ -46,6 +47,7 @@ def create_app() -> Flask:
         )
 
     jwt.init_app(app)
+    init_limiter(app)
 
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
@@ -54,5 +56,6 @@ def create_app() -> Flask:
     app.register_blueprint(stats_bp)
 
     register_error_handlers(app)
+    register_cli(app)
 
     return app

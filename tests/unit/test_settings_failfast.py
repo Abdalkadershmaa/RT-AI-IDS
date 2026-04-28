@@ -95,3 +95,35 @@ def test_db_pool_settings_have_defaults(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.db_pool_timeout == 30
     assert settings.broker_max_stream_len == 100_000
     assert settings.broker_max_retries == 3
+
+
+def test_tier2_settings_have_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rate limit, retention, and model-metadata defaults are well-defined."""
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("SECRET_KEY", "dev")
+    monkeypatch.setenv("JWT_SECRET_KEY", "dev")
+    monkeypatch.setenv("ADMIN_PASSWORD", "dev")
+    for name in ("AUTH_RATE_LIMIT", "ATTACK_LOG_RETENTION_DAYS", "MODEL_VERSION", "MODEL_DATASET"):
+        monkeypatch.delenv(name, raising=False)
+    settings = reload_settings()
+    assert settings.auth_rate_limit == "5 per minute"
+    assert settings.attack_log_retention_days == 90
+    assert settings.model_version == "unknown"
+    assert settings.model_dataset == "CICIDS2017"
+
+
+def test_tier2_settings_respect_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("SECRET_KEY", "dev")
+    monkeypatch.setenv("JWT_SECRET_KEY", "dev")
+    monkeypatch.setenv("ADMIN_PASSWORD", "dev")
+    monkeypatch.setenv("AUTH_RATE_LIMIT", "10 per hour")
+    monkeypatch.setenv("ATTACK_LOG_RETENTION_DAYS", "30")
+    monkeypatch.setenv("MODEL_VERSION", "rf-2026-04")
+    monkeypatch.setenv("MODEL_DATASET", "synthetic-v2")
+    settings = reload_settings()
+    assert settings.auth_rate_limit == "10 per hour"
+    assert settings.attack_log_retention_days == 30
+    assert settings.model_version == "rf-2026-04"
+    assert settings.model_dataset == "synthetic-v2"

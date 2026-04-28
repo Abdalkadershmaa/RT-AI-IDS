@@ -63,6 +63,7 @@ def _handle_predict_job(
             context=job.context,
         )
         alert_id = persist_alert(result, job.context)
+        settings = get_settings()
         broker.store_result(
             _result_key(job.job_id),
             PredictJobResult(
@@ -75,6 +76,8 @@ def _handle_predict_job(
                 risk_score=result.risk_score,
                 rationale=list(result.rationale),
                 alert_id=alert_id,
+                model_version=settings.model_version,
+                model_dataset=settings.model_dataset,
                 completed_at=result.observed_at,
             ).to_dict(),
             ttl_seconds=ttl,

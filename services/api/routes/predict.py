@@ -23,6 +23,7 @@ from shared.observability import bind_correlation_id
 from shared.schemas import PredictJob
 
 from ..deps import get_broker
+from ..responses import envelope_response
 from ..schemas.predict import (
     PredictAcceptedResponse,
     PredictRequest,
@@ -54,10 +55,7 @@ def predict() -> tuple:
     try:
         body = PredictRequest.model_validate(request.get_json(silent=True) or {})
     except ValidationError as exc:
-        return (
-            jsonify({"error": "invalid_request", "detail": _serialize_validation(exc)}),
-            400,
-        )
+        return envelope_response("invalid_request", 400, _serialize_validation(exc))
 
     job_id = uuid.uuid4().hex
     flow_id = body.flow_id or job_id
@@ -93,6 +91,6 @@ def predict_result(job_id: str) -> tuple:
     broker = get_broker()
     result = broker.load_result(_result_key(job_id))
     if result is None:
-        return jsonify({"error": "not_found", "detail": "job_id unknown or expired"}), 404
+        return envelope_response("not_found", 404, "job_id unknown or expired")
     response = PredictResultResponse.model_validate(result)
     return jsonify(response.model_dump()), 200

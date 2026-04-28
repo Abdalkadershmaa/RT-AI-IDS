@@ -70,6 +70,10 @@ services:
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
       BROKER_MAX_STREAM_LEN: ${BROKER_MAX_STREAM_LEN:-100000}
       BROKER_MAX_RETRIES: ${BROKER_MAX_RETRIES:-3}
+      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT:-5 per minute}
+      ATTACK_LOG_RETENTION_DAYS: ${ATTACK_LOG_RETENTION_DAYS:-90}
+      MODEL_VERSION: ${MODEL_VERSION:-unknown}
+      MODEL_DATASET: ${MODEL_DATASET:-CICIDS2017}
     depends_on:
       db:
         condition: service_healthy
@@ -125,6 +129,8 @@ services:
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
       BROKER_MAX_STREAM_LEN: ${BROKER_MAX_STREAM_LEN:-100000}
       BROKER_MAX_RETRIES: ${BROKER_MAX_RETRIES:-3}
+      MODEL_VERSION: ${MODEL_VERSION:-unknown}
+      MODEL_DATASET: ${MODEL_DATASET:-CICIDS2017}
     depends_on:
       db:
         condition: service_healthy
