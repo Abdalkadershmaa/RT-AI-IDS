@@ -292,6 +292,20 @@ paths:
           name: limit
           schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
         - in: query
+          name: since_id
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: >
+            Cursor for delta polling. Returns rows with `id > since_id`,
+            ascending. Mutually exclusive with `before_id`.
+        - in: query
+          name: before_id
+          required: false
+          schema: { type: integer, minimum: 1 }
+          description: >
+            Cursor for infinite-scroll into older history. Returns rows with
+            `id < before_id`, newest-first. Mutually exclusive with `since_id`.
+        - in: query
           name: risk_label
           schema: { type: string }
           description: Filter by exact risk label (e.g. `high`, `critical`)
