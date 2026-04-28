@@ -12,6 +12,11 @@ from __future__ import annotations
 
 import pytest
 
+# These tests require the real Flask-Limiter package. In the slim CI matrix
+# (which doesn't install Flask-Limiter to keep the lint-and-test job fast)
+# the API falls back to a no-op limiter and there's nothing to assert here.
+pytest.importorskip("flask_limiter", reason="Flask-Limiter not installed in this environment")
+
 
 @pytest.fixture
 def rate_limited_client(temp_database_url, fake_broker, monkeypatch):
