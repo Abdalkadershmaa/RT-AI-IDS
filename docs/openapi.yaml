@@ -1,0 +1,391 @@
+openapi: 3.1.0
+info:
+  title: RT-AI-IDS API
+  version: 0.2.0
+  description: |
+    Real-Time AI Intrusion Detection System REST API. All endpoints under
+    `/api/v1/` except `/api/v1/health`, `/api/v1/ready`, and
+    `/api/v1/auth/token` require a JWT bearer token obtained from
+    `POST /api/v1/auth/token`.
+
+    The `POST /api/v1/predict` endpoint is **asynchronous**: it enqueues a
+    job onto a Redis Stream, returns `202 Accepted` with a `job_id`, and the
+    client polls `GET /api/v1/predict/{job_id}` for the result.
+
+servers:
+  - url: http://localhost:5000
+    description: Local docker-compose
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [error, status]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable error code
+          examples:
+            - invalid_request
+            - unauthorized
+            - not_found
+            - internal_server_error
+        status:
+          type: integer
+          description: HTTP status code (mirrors the response status for client convenience)
+        detail:
+          description: Human-readable details or pydantic validation report
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    TokenRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token:
+          type: string
+          description: JWT bearer token (HS256)
+        token_type:
+          type: string
+          enum: [bearer]
+        expires_in:
+          type: integer
+          description: Token lifetime in seconds
+
+    PredictRequest:
+      type: object
+      additionalProperties: false
+      required: [features]
+      properties:
+        flow_id:
+          type: string
+          maxLength: 128
+          description: Optional client-assigned flow id; defaults to job_id
+        features:
+          type: array
+          minItems: 39
+          maxItems: 39
+          items:
+            type: number
+            description: Finite (no NaN/Inf) numeric flow feature
+        context:
+          type: object
+          description: |
+            Free-form metadata persisted with the alert. Canonical field names
+            are ``source_ip`` / ``source_port`` / ``destination_ip`` /
+            ``destination_port``; the legacy short forms ``src_ip`` / ``src_port``
+            / ``dst_ip`` / ``dst_port`` are still accepted for backward
+            compatibility with internal flow-pipeline events.
+          properties:
+            source_ip:        { type: string }
+            source_port:      { type: integer }
+            destination_ip:   { type: string }
+            destination_port: { type: integer }
+            protocol:         { type: string }
+            src_ip:           { type: string, deprecated: true }
+            src_port:         { type: integer, deprecated: true }
+            dst_ip:           { type: string, deprecated: true }
+            dst_port:         { type: integer, deprecated: true }
+
+    PredictAcceptedResponse:
+      type: object
+      required: [job_id, status, poll_url]
+      properties:
+        job_id:
+          type: string
+          description: Opaque hex id used to poll the result
+        status:
+          type: string
+          enum: [pending]
+        poll_url:
+          type: string
+          description: Path to GET to retrieve the eventual result
+
+    PredictJobResult:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:        { type: string }
+        status:
+          type: string
+          enum: [pending, completed, failed]
+        flow_id:       { type: string, nullable: true }
+        classification: { type: string, nullable: true }
+        probability:   { type: number, format: float, nullable: true }
+        risk_label:    { type: string, nullable: true }
+        risk_score:    { type: number, format: float, nullable: true }
+        rationale:
+          type: array
+          items: { type: string }
+        alert_id:      { type: integer, nullable: true }
+        model_version: { type: string, nullable: true }
+        model_dataset: { type: string, nullable: true }
+        completed_at:  { type: string, format: date-time, nullable: true }
+        error:         { type: string, nullable: true }
+
+    Alert:
+      type: object
+      required: [id, flow_id, classification, probability, risk_label, risk_score, created_at]
+      properties:
+        id:              { type: integer }
+        flow_id:         { type: string }
+        source_ip:       { type: string }
+        source_port:     { type: integer }
+        destination_ip:  { type: string }
+        destination_port: { type: integer }
+        protocol:        { type: string }
+        classification:  { type: string }
+        probability:     { type: number, format: float }
+        risk_label:      { type: string }
+        risk_score:      { type: number, format: float }
+        rationale:
+          type: array
+          items: { type: string }
+        model_version:
+          type: string
+          nullable: true
+          description: Version tag of the model that produced the alert.
+        model_dataset:
+          type: string
+          nullable: true
+          description: Training dataset tag of the model that produced the alert.
+        created_at:
+          type: string
+          format: date-time
+
+    StatsResponse:
+      type: object
+      required: [total_alerts, risk_distribution]
+      properties:
+        total_alerts:
+          type: integer
+        risk_distribution:
+          type: object
+          additionalProperties:
+            type: integer
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /api/v1/health:
+    get:
+      summary: Liveness probe
+      description: Always returns 200 if the API process is up.
+      security: []
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+
+  /api/v1/ready:
+    get:
+      summary: Readiness probe
+      description: Returns 200 only when the database is reachable.
+      security: []
+      responses:
+        "200":
+          description: ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ready] }
+        "503":
+          description: db unreachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/auth/token:
+    post:
+      summary: Issue a JWT bearer token
+      description: |
+        Rate-limited via Flask-Limiter. The default budget is `5 per minute`
+        per remote address (configurable with the `AUTH_RATE_LIMIT` env
+        var). Both successful and failed attempts consume the budget so
+        brute-force probes are caught regardless of credential validity.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TokenRequest" }
+      responses:
+        "200":
+          description: token issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "400":
+          description: invalid request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: bad credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: rate limit exceeded — back off and retry after the window resets
+          headers:
+            Retry-After:
+              schema: { type: integer }
+              description: Seconds until the next attempt is permitted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/auth/logout:
+    delete:
+      summary: Revoke the current JWT
+      description: |
+        Adds the current token's `jti` to the Redis denylist until expiry.
+        Subsequent requests with the same bearer token return `401 token_revoked`.
+      responses:
+        "200":
+          description: token revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [logged_out] }
+        "401":
+          description: missing, invalid, expired, or revoked token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/predict:
+    post:
+      summary: Enqueue an inference job (async)
+      description: |
+        Validates the feature vector, publishes a job onto the
+        `predict_jobs` Redis Stream, and returns 202 + a `job_id`. Poll
+        `GET /api/v1/predict/{job_id}` for the result.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PredictRequest" }
+      responses:
+        "202":
+          description: job accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PredictAcceptedResponse" }
+        "400":
+          description: validation error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: missing or invalid bearer token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/predict/{job_id}:
+    get:
+      summary: Poll the result of a prediction job
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        "202":
+          description: job still pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PredictJobResult" }
+        "200":
+          description: job finished (`status` is `completed` or `failed`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PredictJobResult" }
+        "404":
+          description: job_id not found or expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: cached result payload in Redis is corrupt or unreadable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/alerts:
+    get:
+      summary: List persisted alerts (most recent first)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+        - in: query
+          name: since_id
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: >
+            Cursor for delta polling. Returns rows with `id > since_id`,
+            ascending. Mutually exclusive with `before_id`.
+        - in: query
+          name: before_id
+          required: false
+          schema: { type: integer, minimum: 1 }
+          description: >
+            Cursor for infinite-scroll into older history. Returns rows with
+            `id < before_id`, newest-first. Mutually exclusive with `since_id`.
+        - in: query
+          name: risk_label
+          schema: { type: string }
+          description: Filter by exact risk label (e.g. `high`, `very_high`)
+      responses:
+        "200":
+          description: alert list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Alert" }
+
+  /api/v1/stats:
+    get:
+      summary: Risk distribution summary across all persisted alerts
+      responses:
+        "200":
+          description: counts grouped by risk_label
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsResponse" }

@@ -1,0 +1,16 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.csv
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+ids.db
+.env
+*.db-journal
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
