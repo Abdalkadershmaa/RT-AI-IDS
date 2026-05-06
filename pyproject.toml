@@ -28,6 +28,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["PLR2004", "S101"]
 "shared/db/migrations/env.py" = ["E402"]
+# Model loader has many fall-through paths for joblib / dill / TF / fallback —
+# splitting it would just push branches into private helpers without simplifying.
+"services/inference/model_service.py" = ["PLR0912", "PLR0915"]
 
 [tool.black]
 line-length = 110

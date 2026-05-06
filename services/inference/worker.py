@@ -26,11 +26,21 @@ import logging
 import os
 import signal
 import socket
+import time
 from typing import Any
 
 from shared.broker import Broker, BrokerMessage, RedisStreamsBroker, process_with_retries
 from shared.config import get_settings
 from shared.observability import bind_correlation_id, configure_logging
+from shared.observability.metrics import (
+    alerts_persisted_total,
+    predict_job_duration_seconds,
+    predict_jobs_completed_total,
+)
+from shared.observability.tracing import (
+    configure_tracing,
+    start_consumer_span,
+)
 from shared.schemas import DetectionResult, PredictJob, PredictJobResult
 
 from .model_service import ModelService
@@ -56,47 +66,66 @@ def _handle_predict_job(
 ) -> None:
     job = PredictJob(**payload)
     bind_correlation_id(job.job_id)
-    try:
-        result = inference_service.classify_flow(
-            flow_id=job.flow_id,
-            features=job.features,
-            context=job.context,
-        )
-        alert_id = persist_alert(result, job.context)
-        settings = get_settings()
-        broker.store_result(
-            _result_key(job.job_id),
-            PredictJobResult(
-                job_id=job.job_id,
-                status="completed",
-                flow_id=result.flow_id,
-                classification=result.classification,
-                probability=result.probability,
-                risk_label=result.risk_label,
-                risk_score=result.risk_score,
-                rationale=list(result.rationale),
-                alert_id=alert_id,
-                model_version=settings.model_version,
-                model_dataset=settings.model_dataset,
-                completed_at=result.observed_at,
-            ).to_dict(),
-            ttl_seconds=ttl,
-        )
-        logger.info(
-            "predict_job_completed",
-            extra={"job_id": job.job_id, "alert_id": alert_id, "risk_label": result.risk_label},
-        )
-    except Exception as exc:
-        # Predict jobs surface their failure to the polling client through the
-        # cached result. We intentionally swallow the exception so the message
-        # is not retried + DLQ'd: a duplicate alert + duplicate result write
-        # would be worse than a single failure visible to the caller.
-        logger.exception("predict_job_failed job_id=%s", job.job_id)
-        broker.store_result(
-            _result_key(job.job_id),
-            PredictJobResult(job_id=job.job_id, status="failed", error=str(exc)).to_dict(),
-            ttl_seconds=ttl,
-        )
+    propagation = {}
+    if job.traceparent:
+        propagation["traceparent"] = job.traceparent
+    if job.tracestate:
+        propagation["tracestate"] = job.tracestate
+
+    job_start = time.perf_counter()
+    with start_consumer_span("inference.predict_job", propagation):
+        try:
+            result = inference_service.classify_flow(
+                flow_id=job.flow_id,
+                features=job.features,
+                context=job.context,
+            )
+            alert_id = persist_alert(result, job.context)
+            settings = get_settings()
+            broker.store_result(
+                _result_key(job.job_id),
+                PredictJobResult(
+                    job_id=job.job_id,
+                    status="completed",
+                    flow_id=result.flow_id,
+                    classification=result.classification,
+                    probability=result.probability,
+                    risk_label=result.risk_label,
+                    risk_score=result.risk_score,
+                    rationale=list(result.rationale),
+                    alert_id=alert_id,
+                    model_version=settings.model_version,
+                    model_dataset=settings.model_dataset,
+                    completed_at=result.observed_at,
+                ).to_dict(),
+                ttl_seconds=ttl,
+            )
+            elapsed = time.perf_counter() - job_start
+            predict_jobs_completed_total.labels(status="completed").inc()
+            predict_job_duration_seconds.labels(status="completed").observe(elapsed)
+            alerts_persisted_total.labels(risk_label=result.risk_label or "unknown").inc()
+            logger.info(
+                "predict_job_completed",
+                extra={
+                    "job_id": job.job_id,
+                    "alert_id": alert_id,
+                    "risk_label": result.risk_label,
+                },
+            )
+        except Exception as exc:
+            # Predict jobs surface their failure to the polling client through the
+            # cached result. We intentionally swallow the exception so the message
+            # is not retried + DLQ'd: a duplicate alert + duplicate result write
+            # would be worse than a single failure visible to the caller.
+            elapsed = time.perf_counter() - job_start
+            predict_jobs_completed_total.labels(status="failed").inc()
+            predict_job_duration_seconds.labels(status="failed").observe(elapsed)
+            logger.exception("predict_job_failed job_id=%s", job.job_id)
+            broker.store_result(
+                _result_key(job.job_id),
+                PredictJobResult(job_id=job.job_id, status="failed", error=str(exc)).to_dict(),
+                ttl_seconds=ttl,
+            )
 
 
 def _handle_flow_event(
@@ -107,18 +136,34 @@ def _handle_flow_event(
     bind_correlation_id(flow_id or None)
     features = [float(x) for x in payload.get("features", [])]
     context = payload.get("context", {}) or {}
-    result = inference_service.classify_flow(
-        flow_id=flow_id,
-        features=features,
-        context=context,
-    )
-    persist_alert(result, context)
-    return result
+    propagation: dict[str, str] = {}
+    if isinstance(payload.get("traceparent"), str):
+        propagation["traceparent"] = payload["traceparent"]
+    if isinstance(payload.get("tracestate"), str):
+        propagation["tracestate"] = payload["tracestate"]
+
+    with start_consumer_span("inference.flow_event", propagation):
+        result = inference_service.classify_flow(
+            flow_id=flow_id,
+            features=features,
+            context=context,
+        )
+        persist_alert(result, context)
+        alerts_persisted_total.labels(risk_label=result.risk_label or "unknown").inc()
+        return result
 
 
 def run() -> None:
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        service="rt-ai-ids-inference",
+        schema_version=settings.log_schema_version,
+    )
+    configure_tracing(
+        service_name="rt-ai-ids-inference",
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+    )
 
     model_service = ModelService()
     model_service.warm_up()  # eager load — fail-fast at startup if models missing

@@ -58,6 +58,12 @@ class Settings:
     attack_log_retention_days: int
     model_version: str
     model_dataset: str
+    metrics_enabled: bool
+    otel_exporter_otlp_endpoint: str | None
+    otel_service_name: str
+    log_schema_version: str
+    pipeline_probe_timeout_seconds: int
+    service_name: str
 
 
 _cached: Settings | None = None
@@ -124,6 +130,12 @@ def _build() -> Settings:
         attack_log_retention_days=int(os.getenv("ATTACK_LOG_RETENTION_DAYS", "90")),
         model_version=os.getenv("MODEL_VERSION", "unknown"),
         model_dataset=os.getenv("MODEL_DATASET", "CICIDS2017"),
+        metrics_enabled=_read_bool("METRICS_ENABLED", default=True),
+        otel_exporter_otlp_endpoint=_read_optional_str("OTEL_EXPORTER_OTLP_ENDPOINT"),
+        otel_service_name=os.getenv("OTEL_SERVICE_NAME", "rt-ai-ids-api"),
+        log_schema_version=os.getenv("LOG_SCHEMA_VERSION", "1.0"),
+        pipeline_probe_timeout_seconds=int(os.getenv("PIPELINE_PROBE_TIMEOUT_SECONDS", "5")),
+        service_name=os.getenv("SERVICE_NAME", "rt-ai-ids-api"),
     )
     validate_runtime_secrets(
         environment=settings.environment,

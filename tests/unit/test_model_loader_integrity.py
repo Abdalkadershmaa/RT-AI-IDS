@@ -37,7 +37,7 @@ def test_model_service_refuses_hash_mismatch_before_deserialization(
         encoding="utf-8",
     )
 
-    import services.inference.model_service as model_service
+    from services.inference import model_service
 
     monkeypatch.setattr(
         model_service,
