@@ -93,6 +93,7 @@ def _handle_predict_job(
                     risk_label=result.risk_label,
                     risk_score=result.risk_score,
                     rationale=list(result.rationale),
+                    explanation=list(getattr(result, "explanation", []) or []),
                     alert_id=alert_id,
                     model_version=settings.model_version,
                     model_dataset=settings.model_dataset,

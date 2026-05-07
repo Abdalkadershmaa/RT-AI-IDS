@@ -54,6 +54,7 @@ class Settings:
     db_pool_size: int
     db_max_overflow: int
     db_pool_timeout: int
+    db_pool_recycle: int
     auth_rate_limit: str
     attack_log_retention_days: int
     model_version: str
@@ -123,9 +124,10 @@ def _build() -> Settings:
         capture_tcpdump_cmd=_read_optional_str("CAPTURE_CMD"),
         broker_max_stream_len=int(os.getenv("BROKER_MAX_STREAM_LEN", "100000")),
         broker_max_retries=int(os.getenv("BROKER_MAX_RETRIES", "3")),
-        db_pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
-        db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+        db_pool_size=int(os.getenv("DB_POOL_SIZE", "20")),
+        db_max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "40")),
         db_pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        db_pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "300")),
         auth_rate_limit=os.getenv("AUTH_RATE_LIMIT", "5 per minute"),
         attack_log_retention_days=int(os.getenv("ATTACK_LOG_RETENTION_DAYS", "90")),
         model_version=os.getenv("MODEL_VERSION", "unknown"),

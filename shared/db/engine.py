@@ -37,6 +37,10 @@ def _engine_kwargs(settings: Any) -> dict[str, Any]:
         "pool_size": settings.db_pool_size,
         "max_overflow": settings.db_max_overflow,
         "pool_timeout": settings.db_pool_timeout,
+        # Recycle pooled connections every ``db_pool_recycle`` seconds so
+        # idle connections never outlive Postgres' ``idle_in_transaction``
+        # timeouts or a network proxy's TCP-keepalive window.
+        "pool_recycle": settings.db_pool_recycle,
     }
 
 
