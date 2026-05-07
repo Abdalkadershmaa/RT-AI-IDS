@@ -25,6 +25,7 @@ from .middleware import install_metrics_middleware
 from .routes import (
     alerts_bp,
     auth_bp,
+    demo_bp,
     health_bp,
     metrics_bp,
     pipeline_bp,
@@ -49,6 +50,14 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = settings.secret_key
     app.config["JWT_SECRET_KEY"] = settings.jwt_secret_key
     app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MiB
+    # Accept JWTs in the standard ``Authorization`` header (used by all
+    # existing clients) AND in a ``?access_token=...`` query-string parameter
+    # for the Server-Sent Events alert stream — browser ``EventSource`` cannot
+    # send custom request headers, so query-string is the only practical way
+    # to authenticate an SSE subscriber. The query-string variant is otherwise
+    # discouraged for normal endpoints because tokens leak into access logs.
+    app.config["JWT_TOKEN_LOCATION"] = ["headers", "query_string"]
+    app.config["JWT_QUERY_STRING_NAME"] = "access_token"
 
     # CORS: explicit allow-list from CORS_ALLOW_ORIGINS env var. The frontend
     # cannot read JWT-protected responses without Access-Control-Allow-Origin
@@ -79,6 +88,7 @@ def create_app() -> Flask:
     app.register_blueprint(alerts_bp)
     app.register_blueprint(predict_bp)
     app.register_blueprint(stats_bp)
+    app.register_blueprint(demo_bp)
 
     register_error_handlers(app)
     register_cli(app)
