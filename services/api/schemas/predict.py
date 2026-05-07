@@ -50,8 +50,30 @@ class PredictResultResponse(BaseModel):
     risk_label: str | None = None
     risk_score: float | None = None
     rationale: list[str] = Field(default_factory=list)
+    explanation: list[dict[str, Any]] = Field(default_factory=list)
     alert_id: int | None = None
     model_version: str | None = None
     model_dataset: str | None = None
     error: str | None = None
     completed_at: str | None = None
+
+    @property
+    def severity(self) -> str | None:
+        # Convenience: clients can read either ``risk_label`` (lowercase
+        # tier) or ``severity`` (uppercase) — provided through
+        # ``model_dump()`` as an additional field below.
+        if self.risk_label is None:
+            return None
+        from shared.db.models import severity_for
+
+        return severity_for(self.risk_label)
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
+        data = super().model_dump(*args, **kwargs)
+        if self.risk_label is not None:
+            data["severity"] = self.severity
+        if self.classification is not None:
+            data["type"] = self.classification
+        if self.probability is not None:
+            data["confidence"] = round(float(self.probability) * 100, 1)
+        return data

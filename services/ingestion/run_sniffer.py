@@ -15,6 +15,12 @@ Configuration precedence (highest first):
 If a live interface is requested, the name is validated against the kernel's
 list of interfaces before sniffing begins. If the interface does not exist
 the service exits with a clear error listing the available names.
+
+Reliability: live capture is wrapped in a watchdog that retries every
+``SNIFFER_RESTART_DELAY_S`` seconds when the capture coroutine raises (Wi-Fi
+roam, cable pull, NIC reset). Each restart increments the
+``rt_ai_ids_ingestion_interface_resets_total`` counter so operators can
+alert on flapping links instead of relying on container-restart noise.
 """
 
 from __future__ import annotations
@@ -25,6 +31,11 @@ import logging
 
 from shared.config import get_settings
 from shared.observability import configure_logging
+from shared.observability.metrics import (
+    ingestion_interface_resets_total,
+    packets_captured_total,
+    packets_dropped_total,
+)
 
 from .publisher import RedisPublisher
 from .sniffer import CaptureConfig, PcapReplayAdapter, ScapyLiveAdapter, TcpdumpJsonAdapter
@@ -32,6 +43,7 @@ from .sniffer import CaptureConfig, PcapReplayAdapter, ScapyLiveAdapter, Tcpdump
 logger = logging.getLogger(__name__)
 
 DROP_LOG_INTERVAL = 1000
+SNIFFER_RESTART_DELAY_S = 5.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,6 +122,38 @@ def _build_config(args: argparse.Namespace) -> CaptureConfig:
     )
 
 
+async def _run_capture_loop(
+    adapter: PcapReplayAdapter | ScapyLiveAdapter | TcpdumpJsonAdapter,
+    publisher: RedisPublisher,
+    mode: str,
+) -> None:
+    """Single pass through the capture iterator.
+
+    Surfaces drops as a Prometheus metric and records each forwarded
+    packet. Returning normally (PCAP replay finished) ends the run; raising
+    is caught by the watchdog and treated as a flap.
+    """
+
+    last_logged_drops = 0
+    last_metric_drops = 0
+    async for packet in adapter.packets():
+        await publisher.publish(packet)
+        packets_captured_total.labels(mode=mode).inc()
+
+        adapter_drops = int(getattr(adapter, "dropped", 0) or 0)
+        if adapter_drops > last_metric_drops:
+            packets_dropped_total.labels(mode=mode, reason="queue_full").inc(
+                adapter_drops - last_metric_drops
+            )
+            last_metric_drops = adapter_drops
+        if adapter_drops - last_logged_drops >= DROP_LOG_INTERVAL:
+            logger.warning(
+                "ingestion_drops_observed",
+                extra={"dropped_total": adapter_drops, "mode": mode},
+            )
+            last_logged_drops = adapter_drops
+
+
 async def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -117,14 +161,18 @@ async def main() -> None:
     config = _build_config(args)
     publisher = RedisPublisher()
 
+    mode: str
+    factory_args: tuple[CaptureConfig, ...] = (config,)
+    factory: type[PcapReplayAdapter] | type[ScapyLiveAdapter] | type[TcpdumpJsonAdapter]
+
     if config.tcpdump_cmd:
         mode = "tcpdump_subprocess"
-        adapter: PcapReplayAdapter | ScapyLiveAdapter | TcpdumpJsonAdapter = TcpdumpJsonAdapter(
-            config
-        )
+        factory = TcpdumpJsonAdapter
+        live_capture = False
     elif config.pcap_file:
         mode = "pcap_replay"
-        adapter = PcapReplayAdapter(config)
+        factory = PcapReplayAdapter
+        live_capture = False
     else:
         if not config.interface:
             raise RuntimeError(
@@ -133,7 +181,8 @@ async def main() -> None:
             )
         _validate_interface(config.interface)
         mode = "scapy_live"
-        adapter = ScapyLiveAdapter(config)
+        factory = ScapyLiveAdapter
+        live_capture = True
 
     logger.info(
         "ingestion_capture_starting",
@@ -146,17 +195,28 @@ async def main() -> None:
         },
     )
 
-    last_logged_drops = 0
     try:
-        async for packet in adapter.packets():
-            await publisher.publish(packet)
-            adapter_drops = getattr(adapter, "dropped", 0)
-            if adapter_drops - last_logged_drops >= DROP_LOG_INTERVAL:
-                logger.warning(
-                    "ingestion_drops_observed",
-                    extra={"dropped_total": adapter_drops},
-                )
-                last_logged_drops = adapter_drops
+        if live_capture:
+            # Watchdog: live captures restart on transient errors so a Wi-Fi
+            # roam or NIC reset doesn't kill the container. PCAP replay /
+            # tcpdump-subprocess failures stop after one shot because they
+            # represent terminal config errors.
+            while True:
+                adapter = factory(*factory_args)
+                try:
+                    await _run_capture_loop(adapter, publisher, mode)
+                    break  # adapter cleanly exhausted (unusual for live mode)
+                except Exception as exc:  # noqa: BLE001 - watchdog must catch all
+                    ingestion_interface_resets_total.labels(interface=config.interface or "unknown").inc()
+                    logger.warning(
+                        "ingestion_capture_loop_failed restart_in_seconds=%s error=%s",
+                        SNIFFER_RESTART_DELAY_S,
+                        exc,
+                    )
+                    await asyncio.sleep(SNIFFER_RESTART_DELAY_S)
+        else:
+            adapter = factory(*factory_args)
+            await _run_capture_loop(adapter, publisher, mode)
     finally:
         await publisher.close()
 

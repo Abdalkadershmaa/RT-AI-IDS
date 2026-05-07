@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -48,7 +48,10 @@ class DetectionResult:
     risk_score: float
     rationale: list[str]
     observed_at: str
+    # LIME attribution rendered as a list of ``{feature, weight}`` objects.
+    # Default-empty so consumers that do not run an explainer (synthetic
+    # tests, the predict-result cache shape, etc.) keep working unchanged.
+    explanation: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

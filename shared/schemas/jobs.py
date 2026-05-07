@@ -44,6 +44,7 @@ class PredictJobResult:
     risk_label: str | None = None
     risk_score: float | None = None
     rationale: list[str] = field(default_factory=list)
+    explanation: list[dict[str, Any]] = field(default_factory=list)
     alert_id: int | None = None
     model_version: str | None = None
     model_dataset: str | None = None

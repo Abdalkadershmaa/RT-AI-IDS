@@ -162,6 +162,24 @@ pipeline_probe_latency_seconds = _gauge(
     "Wall-clock latency of the most recent pipeline probe.",
 )
 
+packets_captured_total = _counter(
+    "rt_ai_ids_packets_captured_total",
+    "Packets successfully captured and forwarded to the broker.",
+    labelnames=["mode"],
+)
+
+packets_dropped_total = _counter(
+    "rt_ai_ids_packets_dropped_total",
+    "Packets dropped by the ingestion adapter (e.g. bounded queue full).",
+    labelnames=["mode", "reason"],
+)
+
+ingestion_interface_resets_total = _counter(
+    "rt_ai_ids_ingestion_interface_resets_total",
+    "Times the ingestion service restarted the capture loop after a flap.",
+    labelnames=["interface"],
+)
+
 
 def render_latest() -> tuple[bytes, str]:
     """Render the current metric registry in Prometheus text-exposition format.

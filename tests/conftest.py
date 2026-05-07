@@ -34,6 +34,23 @@ os.environ.setdefault("AUTH_RATE_LIMIT", "1000 per minute")
 import pytest  # noqa: E402  — must follow env defaults above
 
 from shared.broker import JsonKeyLoad  # noqa: E402  — must follow env defaults above
+from shared.broker import pubsub as _pubsub_module  # noqa: E402
+
+
+class _NoopPublisher:
+    """Default Redis stand-in for tests.
+
+    The real ``shared.broker.pubsub`` module would attempt to connect to a
+    live Redis instance on first ``publish``. Tests don't run Redis, so we
+    swap in a no-op publisher at import time. ``api_client`` further
+    upgrades this to a recording stub used by SSE end-to-end tests.
+    """
+
+    def publish(self, _channel: str, _message: str) -> int:
+        return 0
+
+
+_pubsub_module._publisher_client = _NoopPublisher()  # type: ignore[assignment]
 
 
 @pytest.fixture
@@ -103,13 +120,45 @@ class FakeRedisKeyValue:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
 
-    def set(self, key: str, value: str, ex: int | None = None) -> bool:
+    def set(
+        self,
+        key: str,
+        value: str,
+        ex: int | None = None,
+        nx: bool | None = None,
+    ) -> bool:
         del ex
+        if nx and key in self.values:
+            return False
         self.values[key] = value
         return True
 
     def get(self, key: str) -> str | None:
         return self.values.get(key)
+
+    def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in self.values:
+                self.values.pop(key)
+                removed += 1
+        return removed
+
+    def execute_command(self, command: str, *args: Any) -> Any:
+        if command.upper() == "GETDEL":
+            key = args[0]
+            return self.values.pop(key, None)
+        raise NotImplementedError(command)
+
+    def scan_iter(self, match: str | None = None) -> Iterator[str]:
+        if match is None:
+            yield from self.values
+            return
+        # Trivial glob match: only suffix '*'.
+        prefix = match.rstrip("*")
+        for key in list(self.values):
+            if key.startswith(prefix):
+                yield key
 
 
 @pytest.fixture
@@ -133,9 +182,21 @@ def api_client(temp_database_url: str, fake_broker: FakeBroker, monkeypatch: pyt
 
     reload_settings()
 
-    from services.api import jwt_denylist
+    from services.api import jwt_denylist, sse_nonce
+    from shared.broker import pubsub as pubsub_module
 
     monkeypatch.setattr(jwt_denylist, "_client", FakeRedisKeyValue())
+    monkeypatch.setattr(sse_nonce, "_client", FakeRedisKeyValue())
+
+    class _FakePubsubPublisher:
+        def __init__(self) -> None:
+            self.published: list[tuple[str, str]] = []
+
+        def publish(self, channel: str, message: str) -> int:
+            self.published.append((channel, message))
+            return 0
+
+    monkeypatch.setattr(pubsub_module, "_publisher_client", _FakePubsubPublisher())
 
     # Drop any rate-limit counters left over from a previous test before
     # creating the app so each test starts with a fresh quota.

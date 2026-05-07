@@ -87,12 +87,16 @@ def test_db_pool_settings_have_defaults(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("DB_POOL_SIZE", raising=False)
     monkeypatch.delenv("DB_MAX_OVERFLOW", raising=False)
     monkeypatch.delenv("DB_POOL_TIMEOUT", raising=False)
+    monkeypatch.delenv("DB_POOL_RECYCLE", raising=False)
     monkeypatch.delenv("BROKER_MAX_STREAM_LEN", raising=False)
     monkeypatch.delenv("BROKER_MAX_RETRIES", raising=False)
     settings = reload_settings()
-    assert settings.db_pool_size == 5
-    assert settings.db_max_overflow == 10
+    # Production-grade defaults — sized for ~100 concurrent SSE clients
+    # plus the predict-API working set without exhausting Postgres.
+    assert settings.db_pool_size == 20
+    assert settings.db_max_overflow == 40
     assert settings.db_pool_timeout == 30
+    assert settings.db_pool_recycle == 300
     assert settings.broker_max_stream_len == 100_000
     assert settings.broker_max_retries == 3
 
