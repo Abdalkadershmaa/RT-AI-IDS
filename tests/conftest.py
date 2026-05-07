@@ -126,7 +126,7 @@ def api_client(temp_database_url: str, fake_broker: FakeBroker, monkeypatch: pyt
 
     reload_settings()
 
-    import services.api.jwt_denylist as jwt_denylist
+    from services.api import jwt_denylist
 
     monkeypatch.setattr(jwt_denylist, "_client", FakeRedisKeyValue())
 

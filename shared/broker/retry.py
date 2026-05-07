@@ -16,6 +16,8 @@ import logging
 import time
 from collections.abc import Callable
 
+from shared.observability.metrics import broker_dlq_total
+
 from .base import BrokerMessage
 from .redis_streams import RedisStreamsBroker
 
@@ -69,6 +71,7 @@ def process_with_retries(
         attempts=max_retries,
     )
     broker.ack(message.stream, message.message_id)
+    broker_dlq_total.labels(stream=message.stream).inc()
     logger.error(
         "broker_message_routed_to_dlq stream=%s id=%s attempts=%d",
         message.stream,

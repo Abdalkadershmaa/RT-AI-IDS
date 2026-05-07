@@ -13,13 +13,20 @@ def _utcnow_iso() -> str:
 
 @dataclass
 class PredictJob:
-    """Work item enqueued by the API and consumed by the inference worker."""
+    """Work item enqueued by the API and consumed by the inference worker.
+
+    ``traceparent`` carries W3C trace-context for distributed tracing so the
+    inference worker can continue the span tree started by the HTTP request.
+    Optional — empty string when tracing is disabled.
+    """
 
     job_id: str
     flow_id: str
     features: list[float]
     context: dict[str, Any]
     submitted_at: str = field(default_factory=_utcnow_iso)
+    traceparent: str = ""
+    tracestate: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

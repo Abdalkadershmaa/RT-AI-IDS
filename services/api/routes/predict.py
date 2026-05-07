@@ -20,6 +20,8 @@ from pydantic import ValidationError
 
 from shared.config import get_settings
 from shared.observability import bind_correlation_id
+from shared.observability.metrics import predict_jobs_published_total
+from shared.observability.tracing import inject_traceparent
 from shared.schemas import PredictJob, PredictJobResult
 
 from ..deps import get_broker
@@ -61,11 +63,18 @@ def predict() -> tuple:
     flow_id = body.flow_id or job_id
     bind_correlation_id(job_id)
 
+    # Inject W3C trace-context so the inference worker can continue the
+    # request span rather than starting a brand-new disconnected trace.
+    propagation: dict[str, str] = {}
+    inject_traceparent(propagation)
+
     job = PredictJob(
         job_id=job_id,
         flow_id=flow_id,
         features=body.features,
         context=body.context,
+        traceparent=propagation.get("traceparent", ""),
+        tracestate=propagation.get("tracestate", ""),
     )
 
     settings = get_settings()
@@ -89,7 +98,9 @@ def predict() -> tuple:
             ).to_dict(),
             ttl_seconds=settings.predict_result_ttl_seconds,
         )
+        predict_jobs_published_total.labels(status="failed").inc()
         return envelope_response("internal_server_error", 500, "failed to enqueue prediction job")
+    predict_jobs_published_total.labels(status="published").inc()
 
     poll_url = url_for("predict.predict_result", job_id=job_id)
     response = PredictAcceptedResponse(

@@ -13,16 +13,37 @@ from flask_cors import CORS
 
 from shared.config import get_settings
 from shared.observability import configure_logging
+from shared.observability.tracing import (
+    configure_tracing,
+    instrument_flask,
+)
 
 from .cli import register_cli
 from .error_handlers import register_error_handlers
 from .extensions import init_limiter, jwt
-from .routes import alerts_bp, auth_bp, health_bp, predict_bp, stats_bp
+from .middleware import install_metrics_middleware
+from .routes import (
+    alerts_bp,
+    auth_bp,
+    health_bp,
+    metrics_bp,
+    pipeline_bp,
+    predict_bp,
+    stats_bp,
+)
 
 
 def create_app() -> Flask:
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        service=settings.service_name,
+        schema_version=settings.log_schema_version,
+    )
+    configure_tracing(
+        service_name=settings.otel_service_name,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+    )
 
     app = Flask(__name__)
     app.config["SECRET_KEY"] = settings.secret_key
@@ -48,8 +69,12 @@ def create_app() -> Flask:
 
     jwt.init_app(app)
     init_limiter(app)
+    install_metrics_middleware(app)
+    instrument_flask(app)
 
     app.register_blueprint(health_bp)
+    app.register_blueprint(metrics_bp)
+    app.register_blueprint(pipeline_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(alerts_bp)
     app.register_blueprint(predict_bp)
