@@ -380,6 +380,60 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Alert" }
 
+  /api/v1/alerts/stream:
+    get:
+      summary: Server-Sent Events stream of new alerts
+      description: >
+        Long-lived `text/event-stream` response that emits one frame per new
+        `AttackLog` row. Each frame is `data: <Alert json>` plus the row id as
+        the SSE `id:` field, suitable for `EventSource.lastEventId` cursor
+        recovery on reconnect.
+
+        Browser `EventSource` cannot send custom headers, so this endpoint
+        accepts the JWT in the standard `Authorization` header **and** as a
+        `?access_token=` query-string parameter. Use the query-string variant
+        only for SSE — tokens otherwise leak into access logs.
+      parameters:
+        - in: query
+          name: access_token
+          required: false
+          schema: { type: string }
+          description: JWT, alternative to the `Authorization` header.
+        - in: query
+          name: since_id
+          required: false
+          schema: { type: integer, minimum: 0 }
+          description: Replay only rows with `id > since_id`. Defaults to `0`.
+      responses:
+        "200":
+          description: SSE stream of new alerts
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  : connected
+
+                  id: 42
+                  data: {"id":42,"flow_id":"f-1","risk_label":"critical", ...}
+
+  /api/v1/demo:
+    get:
+      summary: Built-in single-page demo dashboard
+      description: >
+        Returns a self-contained HTML page that logs in via
+        `POST /api/v1/auth/token`, subscribes to `/api/v1/alerts/stream`, and
+        renders a live alert table plus a stats card. Intended for live
+        committee demos — not a replacement for the production Flutter or
+        Chrome-extension clients.
+      security: []
+      responses:
+        "200":
+          description: HTML dashboard
+          content:
+            text/html:
+              schema: { type: string }
+
   /api/v1/stats:
     get:
       summary: Risk distribution summary across all persisted alerts

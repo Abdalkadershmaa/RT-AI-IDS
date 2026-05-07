@@ -14,10 +14,13 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import pytest
-
-from shared.broker import JsonKeyLoad
-
+# IMPORTANT: env-var defaults must be set BEFORE any first-party import that
+# transitively imports ``shared.config``, because that module calls
+# ``load_dotenv(override=False)`` at import time. If a developer has run
+# ``make bootstrap`` (which writes a real ``.env`` with production-style
+# defaults like ``ALLOW_FALLBACK_CLASSIFIER=false``), the dotenv values would
+# otherwise win over the conftest ``setdefault`` calls and break tests that
+# rely on the dev-friendly fallback classifier.
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("ALLOW_FALLBACK_CLASSIFIER", "true")
 os.environ.setdefault("MODELS_DIR", str(Path(__file__).parent / "_no_models"))
@@ -27,6 +30,10 @@ os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
 # (which logs in once per test class) is never throttled. Specific tests
 # that exercise the rate limiter override this via monkeypatch.
 os.environ.setdefault("AUTH_RATE_LIMIT", "1000 per minute")
+
+import pytest  # noqa: E402  — must follow env defaults above
+
+from shared.broker import JsonKeyLoad  # noqa: E402  — must follow env defaults above
 
 
 @pytest.fixture
